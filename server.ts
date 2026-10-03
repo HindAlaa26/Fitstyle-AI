@@ -733,15 +733,8 @@ function fallbackColors(skinTone: string, undertone: string): { name: string, he
   }
 }
 
-// Analyze Body Endpoint using Multimodal Qwen Vision Sizing & Groq Haute Stylist API
+// Analyze Body Endpoint using FitVerse local measurement service with Qwen fallback
 app.post("/api/analyze-body", async (req: Request, res: Response) => {
-  const key = process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY_1;
-  if (!key || key.trim() === "") {
-    return res.status(500).json({ 
-      error: "OPENROUTER_API_KEY is not configured. Please set it in your .env file." 
-    });
-  }
-
   const { imageBase64, heightCm, weightKg, occasion: userOccasion } = req.body;
   const targetOccasion = userOccasion || "Casual";
 
@@ -888,38 +881,106 @@ VALIDATION BEFORE RETURNING:
       console.log("base64 length:", base64ImageData?.length || "MISSING");
       console.log("mimeType:", mimeType || "MISSING");
 
+      // Body-shape canonical -> the exact casing the rest of this endpoint expects
+      const BODY_SHAPE_LABELS: Record<string, string> = {
+        pear: "Pear",
+        hourglass: "Hourglass",
+        apple: "Apple",
+        rectangle: "Rectangle",
+        inverted_triangle: "InvertedTriangle",
+        unknown: "Hourglass",
+      };
+
       let responseText = "{}";
+      let usedFitVerse = false;
+
+      // Try the real FitVerse (MediaPipe) model first -- local, free, no API key needed.
       try {
-        console.log("[INFO] Attempting visual body analysis with Qwen Vision (multimodal)...");
-        responseText = await callOpenRouter([
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: `${step1Prompt}\n\nClient-Provided Metadata for Guidelines:\nHeight Context: ${heightCm || 165} cm\nWeight Context: ${weightKg || 58} kg\nTarget Occasion Context: ${targetOccasion}`
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:${mimeType};base64,${base64ImageData}`
-                }
-              }
-            ]
-          }
-        ], true);
-      } catch (imageErr: any) {
-        console.log(`[INFO] Qwen Vision multimodal call fallback triggered due to: ${imageErr.message}`);
-        // Text-based fallback
-        responseText = await callOpenRouter([
-          {
-            role: "user",
-            content: `${step1Prompt}\n\nClient-Provided Metadata for Sizing Estimation:\nHeight: ${heightCm || 165} cm\nWeight: ${weightKg || 58} kg\nTarget Occasion: ${targetOccasion}\n\nPlease perform precise mathematical estimation based on this biometric data to return matching JSON.`
-          }
-        ], true);
+        console.log("[INFO] Attempting body analysis via local FitVerse measurement service...");
+        const fitVerseRes = await fetch("http://localhost:5001/detect-size", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imageBase64: `data:${mimeType};base64,${base64ImageData}`, heightCm: heightCm || 165 }),
+          signal: AbortSignal.timeout(15000),
+        });
+
+        if (fitVerseRes.ok) {
+          const fv = await fitVerseRes.json();
+          const m = fv.measurements || {};
+          const shouldersIn = m.shoulder ? m.shoulder / 2.54 : 14;
+          const hipsIn = m.hip ? m.hip / 2.54 : 36;
+          const waistIn = m.waist ? m.waist / 2.54 : Math.max(20, hipsIn - 6);
+          const clothingInterference = fv.waist_method === "proportional_fallback";
+
+          responseText = JSON.stringify({
+            shoulders_in: Number(shouldersIn.toFixed(1)),
+            waist_in: Number(waistIn.toFixed(1)),
+            hips_in: Number(hipsIn.toFixed(1)),
+            height_cm: m.height_cm || heightCm || 165,
+            weight_kg: weightKg || 58,
+            body_shape: BODY_SHAPE_LABELS[fv.body_shape] || "Hourglass",
+            skin_tone: "Medium",
+            undertone: "Neutral",
+            suggested_size: fv.recommended_size || "M",
+            confidence: fv.waist_confidence === "high" ? "High" : fv.waist_confidence === "low" ? "Low" : "Medium",
+            confidence_reason: `Waist measured via ${fv.waist_method || "unknown"} method (MediaPipe pose + segmentation).`,
+            clothing_interference: clothingInterference,
+            warnings: clothingInterference
+              ? ["Waist estimate used a proportional fallback -- loose clothing may reduce accuracy."]
+              : [],
+            annotated_image_base64: fv.annotated_image_base64
+              ? `data:image/jpeg;base64,${fv.annotated_image_base64}`
+              : null,
+            line_positions: fv.line_positions || null,
+          });
+          usedFitVerse = true;
+          console.log("[INFO] FitVerse measurement succeeded.");
+        } else {
+          console.log("[INFO] FitVerse service returned an error status, falling back to Qwen.");
+        }
+      } catch (fitVerseErr: any) {
+        console.log("[INFO] FitVerse service unreachable (is body_measurement_service.py running?), falling back to Qwen:", fitVerseErr.message);
       }
-      
-      console.log("=== RAW Qwen RESPONSE ===", responseText);
+
+      if (!usedFitVerse) {
+        const key = process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY_1;
+        if (!key || key.trim() === "") {
+          return res.status(500).json({
+            error: "FitVerse service is unreachable and OPENROUTER_API_KEY is not configured as a fallback. Start body_measurement_service.py or set OPENROUTER_API_KEY in .env.",
+          });
+        }
+        console.log("[INFO] Attempting visual body analysis with Qwen Vision (multimodal)...");
+        try {
+          responseText = await callOpenRouter([
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: `${step1Prompt}\n\nClient-Provided Metadata for Guidelines:\nHeight Context: ${heightCm || 165} cm\nWeight Context: ${weightKg || 58} kg\nTarget Occasion Context: ${targetOccasion}`
+                },
+                {
+                  type: "image_url",
+                  image_url: {
+                    url: `data:${mimeType};base64,${base64ImageData}`
+                  }
+                }
+              ]
+            }
+          ], true);
+        } catch (imageErr: any) {
+          console.log(`[INFO] Qwen Vision multimodal call fallback triggered due to: ${imageErr.message}`);
+          // Text-based fallback
+          responseText = await callOpenRouter([
+            {
+              role: "user",
+              content: `${step1Prompt}\n\nClient-Provided Metadata for Sizing Estimation:\nHeight: ${heightCm || 165} cm\nWeight: ${weightKg || 58} kg\nTarget Occasion: ${targetOccasion}\n\nPlease perform precise mathematical estimation based on this biometric data to return matching JSON.`
+            }
+          ], true);
+        }
+      }
+
+      console.log("=== RAW response (FitVerse or Qwen) ===", responseText);
 
       try {
         const rawJsonText = responseText.replace(/```json|```/g, "").trim();
@@ -985,7 +1046,9 @@ VALIDATION BEFORE RETURNING:
           hips_in: hips,
           clothing_interference: is_clothing_obscuring,
           warnings: parsed.warnings || [],
-          confidence_reason: parsed.confidence_reason || ""
+          confidence_reason: parsed.confidence_reason || "",
+          annotated_image_base64: parsed.annotated_image_base64 || null,
+          line_positions: parsed.line_positions || null
         };
 
         if (parsed.height_cm) {
@@ -1300,7 +1363,9 @@ Product catalog: ${JSON.stringify(occasionFilteredProducts, null, 2)}`;
       weight_kg: step1Data.weight_kg,
       clothing_interference: step1Data.clothing_interference,
       warnings: step1Data.warnings,
-      confidence_reason: step1Data.confidence_reason
+      confidence_reason: step1Data.confidence_reason,
+      annotated_image_base64: step1Data.annotated_image_base64 || null,
+      line_positions: step1Data.line_positions || null
     },
     stylist_log: stylistLog,
     outfit_coordinates: outfitCoordinates,
@@ -1400,7 +1465,7 @@ app.post("/api/try-on", async (req: Request, res: Response) => {
 
     const hfToken = process.env.HF_TOKEN;
     const client = await Client.connect("Kwai-Kolors/Kolors-Virtual-Try-On", {
-      ...(hfToken ? { hf_token: hfToken } : {})
+      ...(hfToken ? ({ hf_token: hfToken } as any) : {})
     });
 
     const result = await client.predict(2, [

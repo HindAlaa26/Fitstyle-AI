@@ -1142,6 +1142,9 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
   const [hipSize, setHipSize] = useState<number>(35);
   const [selectedSize, setSelectedSize] = useState<string>("M");
   const calibratedMeasurementsRef = useRef({ heightCm: 172, shoulderSize: 34, waistSize: 26, hipSize: 35 });
+  // Set once, right after the AI produces a result, and never touched again --
+  // this is what Reset should always revert to, regardless of manual edits/saves.
+  const originalAiMeasurementsRef = useRef({ heightCm: 172, shoulderSize: 34, waistSize: 26, hipSize: 35 });
 
   const [classifyDetails, setClassifyDetails] = useState<{
     shape: BodyShapeType;
@@ -1169,6 +1172,7 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
   const [hauteStylistResult, setHauteStylistResult] = useState<any>(null);
   const [recalibrated, setRecalibrated] = useState<boolean>(false);
   const [validationResult, setValidationResult] = useState<any>(null);
+  const [annotatedImage, setAnnotatedImage] = useState<string | null>(null);
   const [isValidationLogOpen, setIsValidationLogOpen] = useState<boolean>(false);
 
   // Selected outfits mapping (Top, Bottom, Footwear, Accessories)
@@ -1508,6 +1512,8 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
         data.body_analysis.confidence = validated.confidence;
       }
       setValidationResult(validated);
+      // Present only when the real FitVerse model produced this result
+      setAnnotatedImage(bodyAnalysis.annotated_image_base64 || null);
 
       const shoulderSize = validated.shoulders_in;
       const waistSize = validated.waist_in;
@@ -1558,12 +1564,22 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
         waistSize,
         hipSize
       };
+      originalAiMeasurementsRef.current = {
+        heightCm: validated.height_cm,
+        shoulderSize,
+        waistSize,
+        hipSize
+      };
 
-      if (validated.confidence?.toLowerCase() === "low" || isLooseClothing) {
-        const confidence = Math.min(95, 60 + ((shoulderSize + waistSize + hipSize) / 3));
-        setPoseConfidence(Math.round(confidence));
-      } else {
+      // Reflects FitVerse's real waist_confidence (High/Medium/Low), not a
+      // cosmetic formula -- this is the actual model's confidence, not decoration.
+      const confidenceLevel = (validated.confidence || "").toLowerCase();
+      if (confidenceLevel === "high") {
         setPoseConfidence(95);
+      } else if (confidenceLevel === "low" || isLooseClothing) {
+        setPoseConfidence(60);
+      } else {
+        setPoseConfidence(80);
       }
 
       // Map Groq returned Outfit Coordinates directly into active showroom slots!
@@ -4387,11 +4403,11 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
     };
 
     const resetAdjustments = () => {
-      const calibrated = calibratedMeasurementsRef.current;
-      setHeightCm(calibrated.heightCm);
-      setShoulderSize(calibrated.shoulderSize);
-      setWaistSize(calibrated.waistSize);
-      setHipSize(calibrated.hipSize);
+      const original = originalAiMeasurementsRef.current;
+      setHeightCm(original.heightCm);
+      setShoulderSize(original.shoulderSize);
+      setWaistSize(original.waistSize);
+      setHipSize(original.hipSize);
     };
 
     return (
@@ -4417,10 +4433,9 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{measurementCards.map((measurement) => <div key={measurement.label} className="rounded-2xl border border-[#ECDDEC] bg-white p-4"><div className="flex items-center justify-between"><span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500"><span className="material-symbols-outlined text-base text-[#831843]">{measurement.icon}</span>{measurement.label}</span><Edit3 className="h-3.5 w-3.5 text-slate-300" /></div><div className="mt-3 flex items-end justify-between gap-2"><label className="flex items-baseline gap-1"><input aria-label={measurement.label} type="number" min={measurement.min} value={measurement.value || ""} onChange={(event) => measurement.setValue(Number(event.target.value))} className="w-24 bg-transparent font-playfair text-3xl font-bold text-[#1A1528] outline-none" /><span className="text-[10px] font-bold uppercase text-slate-400">{measurement.unit}</span></label><div className="flex gap-1"><button type="button" aria-label={`Decrease ${measurement.label}`} onClick={() => measurement.setValue(Math.max(measurement.min, measurement.value - 1))} className="rounded-lg border border-[#ECDDEC] p-1.5 text-[#5B085A] hover:bg-[#FBF6FB]"><Minus className="h-3.5 w-3.5" /></button><button type="button" aria-label={`Increase ${measurement.label}`} onClick={() => measurement.setValue(measurement.value + 1)} className="rounded-lg border border-[#ECDDEC] p-1.5 text-[#5B085A] hover:bg-[#FBF6FB]"><Plus className="h-3.5 w-3.5" /></button></div></div></div>)}</div>
 
-              <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-[#ECDDEC] bg-[#FBF6FB] p-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-start gap-2.5"><Edit3 className="mt-0.5 h-4 w-4 shrink-0 text-[#5B085A]" /><div><h3 className="text-xs font-bold text-[#1A1528]">Manual Editing Active</h3><p className="mt-1 text-[10px] leading-relaxed text-slate-500">Adjusted dimensions will dynamically adapt pattern rendering and tailoring allowances in Step 3.</p></div></div><button type="button" onClick={saveAdjustments} className="shrink-0 rounded-xl bg-[#5B085A] px-4 py-2 text-[10px] font-extrabold uppercase tracking-wider text-white shadow-sm hover:bg-[#470646]">Save Adjustments</button></div>
             </section>
 
-            <section className="lg:col-span-5 space-y-4"><div className="rounded-3xl border border-[#ECDDEC] bg-white p-4 shadow-[0_12px_30px_rgba(91,8,90,0.05)] md:p-5"><div className="flex items-center justify-between"><span className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.16em] text-[#5B085A]"><span className="h-2 w-2 rounded-full bg-[#5B085A]" /> Shopper Photo</span><span className="font-mono text-[9px] text-slate-400">ID: FA-99283-WL</span></div><div className="relative mt-4 aspect-[2/3] overflow-hidden rounded-2xl border border-[#ECDDEC] bg-[#f8f5f8]">{selectedPhoto ? <img src={selectedPhoto} alt="Uploaded shopper full body" className="h-full w-full object-contain" /> : <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-slate-400"><Upload className="h-8 w-8 text-[#ac2471]" /><span className="text-xs font-bold">Upload a full-body photo in Step 1</span></div>}<span className="absolute left-3 top-3 rounded-full border border-white/70 bg-white/90 px-2.5 py-1 text-[9px] font-bold text-[#1A1528] shadow-sm">Full-Body Detected</span><span className="absolute right-3 top-3 rounded-full border border-white/70 bg-white/90 px-2.5 py-1 text-[9px] font-bold text-[#1A1528] shadow-sm">{Math.round(poseConfidence)}% Scale</span>{poseLoading && <div className="absolute inset-0 flex items-center justify-center bg-white/75"><RefreshCw className="h-6 w-6 animate-spin text-[#5B085A]" /></div>}</div><p className="mt-3 flex items-center gap-1.5 text-xs font-bold text-emerald-700"><CheckCircle2 className="h-4 w-4" /> Photo analyzed successfully</p><div className="mt-2 flex items-center justify-between border-t border-[#f1e8f2] pt-2 text-[10px] text-slate-500"><span>AI sizing calibration complete</span><span>Pose: Standing Neutral</span></div></div><div className="flex items-center justify-between rounded-2xl border border-[#ECDDEC] bg-white px-4 py-3 text-[10px] text-slate-500 shadow-sm"><span>Need a different posture or lighting?</span><label className="inline-flex cursor-pointer items-center gap-1.5 font-extrabold uppercase tracking-wider text-[#5B085A] hover:text-[#470646]"><Upload className="h-3.5 w-3.5" /> Re-upload<input type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} /></label></div></section>
+            <section className="lg:col-span-5 space-y-4"><div className="rounded-3xl border border-[#ECDDEC] bg-white p-4 shadow-[0_12px_30px_rgba(91,8,90,0.05)] md:p-5"><div className="flex items-center justify-between"><span className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.16em] text-[#5B085A]"><span className="h-2 w-2 rounded-full bg-[#5B085A]" /> Shopper Photo</span><span className="font-mono text-[9px] text-slate-400">ID: FA-99283-WL</span></div><div className="relative mt-4 aspect-[2/3] overflow-hidden rounded-2xl border border-[#ECDDEC] bg-[#f8f5f8]">{selectedPhoto ? <img src={annotatedImage || selectedPhoto} alt={annotatedImage ? "Photo with FitVerse measurement overlay" : "Uploaded shopper full body"} className="h-full w-full object-contain" /> : <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-slate-400"><Upload className="h-8 w-8 text-[#ac2471]" /><span className="text-xs font-bold">Upload a full-body photo in Step 1</span></div>}<span className="absolute left-3 top-3 rounded-full border border-white/70 bg-white/90 px-2.5 py-1 text-[9px] font-bold text-[#1A1528] shadow-sm">Full-Body Detected</span><span className="absolute right-3 top-3 rounded-full border border-white/70 bg-white/90 px-2.5 py-1 text-[9px] font-bold text-[#1A1528] shadow-sm">{Math.round(poseConfidence)}% Scale</span>{poseLoading && <div className="absolute inset-0 flex items-center justify-center bg-white/75"><RefreshCw className="h-6 w-6 animate-spin text-[#5B085A]" /></div>}</div><p className="mt-3 flex items-center gap-1.5 text-xs font-bold text-emerald-700"><CheckCircle2 className="h-4 w-4" /> Photo analyzed successfully</p><div className="mt-2 flex items-center justify-between border-t border-[#f1e8f2] pt-2 text-[10px] text-slate-500"><span>AI sizing calibration complete</span><span>Pose: Standing Neutral</span></div></div><div className="flex items-center justify-between rounded-2xl border border-[#ECDDEC] bg-white px-4 py-3 text-[10px] text-slate-500 shadow-sm"><span>Need a different posture or lighting?</span><label className="inline-flex cursor-pointer items-center gap-1.5 font-extrabold uppercase tracking-wider text-[#5B085A] hover:text-[#470646]"><Upload className="h-3.5 w-3.5" /> Re-upload<input type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} /></label></div></section>
           </div>
 
           <div className="mt-5 flex flex-col-reverse items-center justify-between gap-4 sm:flex-row"><button type="button" onClick={() => setCurrentStep(1)} className="inline-flex items-center gap-2 rounded-xl border border-[#ECDDEC] bg-white px-4 py-2.5 text-[10px] font-extrabold uppercase tracking-wider text-[#5B085A] hover:bg-[#FBF6FB]"><ArrowLeft className="h-3.5 w-3.5" /> Back to Theme Selection</button><div className="text-center sm:text-right"><button type="button" onClick={() => setCurrentStep(3)} className="inline-flex items-center gap-2 rounded-full bg-[#5B085A] px-6 py-3 text-[11px] font-extrabold uppercase tracking-[0.12em] text-white shadow-md hover:bg-[#470646] active:scale-[0.98]">Next: Try-On <ArrowRight className="h-4 w-4" /></button><p className="mt-1.5 text-[10px] text-slate-500">Confirm your measurements to continue to virtual try-on.</p></div></div>
