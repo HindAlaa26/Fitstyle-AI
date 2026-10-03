@@ -126,6 +126,7 @@ interface ShopperStudioViewProps {
   onBackToPortal?: () => void;
   initialStep?: number;
   initialOutfit?: any;
+  onAddToCart?: (items: Product[]) => void;
   onAddProduct?: (newProd: Omit<Product, "id"> & { id?: string }) => Promise<void> | void;
   onDeleteProduct?: (id: string) => Promise<void> | void;
 }
@@ -682,7 +683,7 @@ function CatalogModal({
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function ShopperStudioView({ products, currentUser, onLogout, onDeleteAccount, onLogin, onBackToPortal, initialOutfit, onAddProduct, onDeleteProduct, initialStep }: ShopperStudioViewProps) {
+export default function ShopperStudioView({ products, currentUser, onLogout, onDeleteAccount, onLogin, onBackToPortal, initialOutfit, onAddProduct, onDeleteProduct, onAddToCart, initialStep }: ShopperStudioViewProps) {
   // Main express checkout states
   const [connectedPayment, setConnectedPayment] = useState<"google" | "apple" | null>(null);
   const [googleAccountInfo, setGoogleAccountInfo] = useState<{ name: string; email: string } | null>(null);
@@ -713,6 +714,7 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
     billingAddress: "148 Luxury Atelier Blvd, San Francisco, CA"
   });
   const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [cartAddFeedback, setCartAddFeedback] = useState(false);
   const [orderId, setOrderId] = useState<string>(`FS-${Math.floor(100000 + Math.random() * 900000)}`);
   
   // Order Confirmed Additional States
@@ -3212,6 +3214,12 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
       setLookGenerating(true);
       window.setTimeout(() => setLookGenerating(false), 1400);
     };
+    const handleAddSelectedToCart = () => {
+      if (selectedItems.length === 0 || !onAddToCart) return;
+      onAddToCart(selectedItems);
+      setCartAddFeedback(true);
+      window.setTimeout(() => setCartAddFeedback(false), 1800);
+    };
 
     return (
       <main className="flex-grow bg-[#fbf8fb] px-4 py-6 md:px-8 md:py-8" id="step-3-container">
@@ -3237,7 +3245,7 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
 
             <section className="rounded-3xl border border-[#ecddec] bg-white p-4 shadow-sm md:p-5"><div className="relative overflow-hidden rounded-2xl bg-[#e9e2e9] shadow-inner"><div className="aspect-[4/5] min-h-[520px] md:min-h-[620px]">{previewImage ? <img src={previewImage} alt="Virtual try-on preview" className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-center text-xs text-slate-500">Upload a photo in Step 1 to preview your look.</div>}</div><div className="absolute left-4 top-4 inline-flex items-center gap-2 rounded-full border border-white/50 bg-white/85 px-3 py-1.5 text-[9px] font-bold text-[#1d1327] shadow-sm backdrop-blur"><span className="h-2 w-2 rounded-full bg-emerald-500" /> Virtual Fitting Active</div><span className="absolute bottom-4 right-4 rounded-md bg-black/60 px-2.5 py-1.5 text-[8px] font-bold tracking-[0.16em] text-white">RENDER: 4K PHOTONIC</span><div className="pointer-events-none absolute left-1/2 top-1/2 h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/70"><span className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white" /></div></div><p className="mt-4 text-center font-playfair text-xl italic text-[#580a58]">Effortless <span className="not-italic text-[#d2a5c9]">•</span> Intelligent <span className="not-italic text-[#d2a5c9]">•</span> Serene</p></section>
 
-            <section className="flex flex-col rounded-3xl border border-[#ecddec] bg-white p-5 shadow-sm md:p-6"><div className="border-b border-[#f1e8f2] pb-4"><h3 className="font-playfair text-2xl font-bold text-[#1d1327]">Your Selection</h3><p className="mt-2 text-[10px] font-extrabold uppercase tracking-wider text-[#ac2471]">✦ AI Style Harmony: 98%</p></div><div className="mt-2 flex-1 divide-y divide-[#f1e8f2]">{selectedItems.length === 0 ? <p className="py-8 text-center text-xs text-slate-400">No pieces selected yet.</p> : selectedItems.map((item) => <div key={item.id} className="flex items-center gap-3 py-4"><img src={item.image} alt={item.name} className="h-14 w-12 rounded-lg object-cover" /><div className="min-w-0 flex-1"><p className="truncate text-[11px] font-bold text-[#1d1327]">{item.name}</p><p className="mt-1 text-[10px] text-slate-500">Size: {item.size}</p><p className="mt-1 font-serif text-sm font-bold text-[#580a58]">${item.price.toFixed(2)}</p></div><button type="button" aria-label={`Remove ${item.name}`} onClick={() => removeItem(item.id)} className="rounded-full p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"><span className="text-lg leading-none">×</span></button></div>)}</div><div className="mt-4 border-t border-[#f1e8f2] pt-4 text-xs text-slate-500"><div className="flex justify-between"><span>Items ({selectedItems.length})</span><span>${selectedTotal.toFixed(2)}</span></div><div className="mt-2 flex justify-between"><span>AI Styling Fee</span><span className="font-bold text-emerald-600">FREE</span></div><div className="my-4 border-t border-[#f1e8f2]" /><div className="flex items-end justify-between"><span className="font-bold uppercase tracking-wider text-[#1d1327]">Total</span><span className="font-playfair text-2xl font-bold text-[#580a58]">${selectedTotal.toFixed(2)}</span></div><button type="button" onClick={() => setCurrentStep(4)} disabled={selectedItems.length === 0} className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-[#580a58] px-4 py-3.5 text-[10px] font-extrabold uppercase tracking-wider text-white shadow-sm transition hover:bg-[#450645] disabled:cursor-not-allowed disabled:opacity-40">Continue to Create Order <ArrowRight className="h-4 w-4" /></button></div></section>
+            <section className="flex flex-col rounded-3xl border border-[#ecddec] bg-white p-5 shadow-sm md:p-6"><div className="border-b border-[#f1e8f2] pb-4"><h3 className="font-playfair text-2xl font-bold text-[#1d1327]">Your Selection</h3><p className="mt-2 text-[10px] font-extrabold uppercase tracking-wider text-[#ac2471]">✦ AI Style Harmony: 98%</p></div><div className="mt-2 flex-1 divide-y divide-[#f1e8f2]">{selectedItems.length === 0 ? <p className="py-8 text-center text-xs text-slate-400">No pieces selected yet.</p> : selectedItems.map((item) => <div key={item.id} className="flex items-center gap-3 py-4"><img src={item.image} alt={item.name} className="h-14 w-12 rounded-lg object-cover" /><div className="min-w-0 flex-1"><p className="truncate text-[11px] font-bold text-[#1d1327]">{item.name}</p><p className="mt-1 text-[10px] text-slate-500">Size: {item.size}</p><p className="mt-1 font-serif text-sm font-bold text-[#580a58]">${item.price.toFixed(2)}</p></div><button type="button" aria-label={`Remove ${item.name}`} onClick={() => removeItem(item.id)} className="rounded-full p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"><span className="text-lg leading-none">×</span></button></div>)}</div><div className="mt-4 border-t border-[#f1e8f2] pt-4 text-xs text-slate-500"><div className="flex justify-between"><span>Items ({selectedItems.length})</span><span>${selectedTotal.toFixed(2)}</span></div><div className="mt-2 flex justify-between"><span>AI Styling Fee</span><span className="font-bold text-emerald-600">FREE</span></div><div className="my-4 border-t border-[#f1e8f2]" /><div className="flex items-end justify-between"><span className="font-bold uppercase tracking-wider text-[#1d1327]">Total</span><span className="font-playfair text-2xl font-bold text-[#580a58]">${selectedTotal.toFixed(2)}</span></div><button type="button" onClick={() => setCurrentStep(4)} disabled={selectedItems.length === 0} className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-[#5a005a] px-4 py-3.5 text-[10px] font-extrabold uppercase tracking-wider text-white shadow-sm transition hover:bg-[#470646] disabled:cursor-not-allowed disabled:opacity-40">Continue to Create Order <ArrowRight className="h-4 w-4" /></button><button type="button" onClick={handleAddSelectedToCart} disabled={selectedItems.length === 0 || !onAddToCart} className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-[#5a005a] bg-white px-4 py-3.5 text-[10px] font-extrabold uppercase tracking-wider text-[#5a005a] transition hover:bg-[#fbf5fa] disabled:cursor-not-allowed disabled:opacity-40">{cartAddFeedback ? <><CheckCircle2 className="h-4 w-4" /> Added to Cart</> : <><ShoppingBag className="h-4 w-4" /> Add to Cart</>}</button></div></section>
           </div>
         </div>
       </main>

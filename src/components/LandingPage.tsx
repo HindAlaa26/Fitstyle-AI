@@ -9,14 +9,10 @@ import {
   Star, 
   Users, 
   ArrowRight, 
-  Share2, 
-  Globe,
   LogOut,
-  Settings,
   Heart
 } from "lucide-react";
 import { Product, UserProfile } from "../types";
-import MyLooksPage from "./MyLooksPage";
 import ProductCartPage, { CartItem } from "./ProductCartPage";
 import fitStyleLogo from "../assets/images/fitstyle_ai_logo_1780811765736.png";
 import featuredWeddingDress from "../assets/images/wedding.jpeg";
@@ -26,12 +22,10 @@ interface LandingPageProps {
   currentUser: UserProfile | null;
   onLogout: () => void;
   onDeleteAccount?: () => void;
-  activeView: "home" | "my-looks" | "cart";
-  setActiveView: (view: "home" | "my-looks" | "cart") => void;
+  activeView: "home" | "cart";
+  setActiveView: (view: "home" | "cart") => void;
   onSignIn: (message?: string, redirectTarget?: string) => void;
-  onAdminSignIn?: () => void;
   onEnterFittingStudio: () => void;
-  setInitialOutfit: (outfit: any) => void;
   cartItems: CartItem[];
   onOpenCart: () => void;
   onProceedToPayment: () => void;
@@ -47,9 +41,7 @@ export default function LandingPage({
   activeView, 
   setActiveView, 
   onSignIn, 
-  onAdminSignIn,
   onEnterFittingStudio,
-  setInitialOutfit,
   cartItems,
   onOpenCart,
   onProceedToPayment,
@@ -64,14 +56,6 @@ export default function LandingPage({
       ? currentUser.fullName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)
       : currentUser.email[0].toUpperCase()
     : "";
-
-  const handleMyLooksClick = () => {
-    if (!currentUser) {
-      onSignIn("Sign in to view your saved looks", "my-looks");
-    } else {
-      setActiveView("my-looks");
-    }
-  };
 
   const handleStartTransformation = () => {
     if (!currentUser) {
@@ -107,30 +91,6 @@ export default function LandingPage({
               referrerPolicy="no-referrer"
             />
             <span className="text-2xl font-serif font-bold italic text-purple-900">FitStyle AI</span>
-          </div>
-
-          {/* Navigation Items */}
-          <div className="hidden md:flex items-center gap-8 font-serif text-lg tracking-tight">
-            <button 
-              onClick={() => setActiveView("home")} 
-              className={`font-semibold transition-colors pb-0.5 cursor-pointer hover:text-purple-700 ${
-                activeView === "home" 
-                  ? "text-purple-900 border-b-2 border-purple-800" 
-                  : "text-zinc-500"
-              }`}
-            >
-              Home
-            </button>
-            <button 
-              onClick={handleMyLooksClick}
-              className={`font-medium transition-colors cursor-pointer hover:text-purple-700 ${
-                activeView === "my-looks" 
-                  ? "text-purple-900 border-b-2 border-purple-800 font-semibold" 
-                  : "text-zinc-500"
-              }`}
-            >
-              My Looks
-            </button>
           </div>
 
           {/* Header Action Items */}
@@ -174,27 +134,6 @@ export default function LandingPage({
                       <p className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider">Shopper Account</p>
                       <p className="text-xs font-bold text-purple-950 truncate">{currentUser.fullName}</p>
                     </div>
-
-                    <button
-                      onClick={() => {
-                        setActiveView("my-looks");
-                        setShowDropdown(false);
-                      }}
-                      className="w-full text-left px-4 py-2 hover:bg-purple-50 text-xs font-semibold text-slate-700 hover:text-purple-950 flex items-center gap-2 cursor-pointer"
-                    >
-                      🌱 My Looks
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        setSettingsActive(true);
-                        setShowDropdown(false);
-                      }}
-                      className="w-full text-left px-4 py-2 hover:bg-purple-50 text-xs font-semibold text-slate-700 hover:text-purple-950 flex items-center gap-2 cursor-pointer"
-                    >
-                      <Settings className="w-3.5 h-3.5 text-zinc-400" />
-                      Settings
-                    </button>
 
                     <div className="h-px bg-purple-50 my-1" />
 
@@ -422,23 +361,6 @@ export default function LandingPage({
         )}
 
 
-        {/* Dynamic Pages */}
-        {activeView === "my-looks" && (
-          currentUser ? (
-            <MyLooksPage 
-              uid={currentUser.uid}
-              onNavigateToStudio={(outfit) => {
-                if (outfit) setInitialOutfit(outfit);
-                onEnterFittingStudio();
-              }}
-            />
-          ) : (
-            <div className="py-20 text-center">
-              <p className="text-sm font-bold text-red-600">Authentication is required to view saved looks.</p>
-            </div>
-          )
-        )}
-
       </main>
 
       {/* Settings Modal (Placeholder as requested) */}
@@ -477,39 +399,11 @@ export default function LandingPage({
 
       {/* Footer Container */}
       <footer className="bg-white border-t border-purple-50">
-        <div className="max-w-7xl mx-auto px-8 py-12 flex flex-col md:flex-row justify-between items-center gap-6">
-          <div className="flex flex-col items-center md:items-start text-center md:text-left">
-            <span className="font-bold text-lg text-purple-900 font-serif">FitStyle AI</span>
-            <p className="font-sans text-xs tracking-widest text-zinc-400 mt-2">
-              © {new Date().getFullYear()} FitStyle AI. Curated Elegance for the Modern Woman.
-            </p>
+        <div className="mx-auto px-4 py-6 text-center">
+          <p className="whitespace-nowrap font-sans text-[clamp(0.6rem,2.5vw,0.75rem)] tracking-wide text-zinc-400">
+            © 2026 FitStyle AI — Curated Elegance for the Modern Woman.
+          </p>
           </div>
-
-          <div className="flex gap-8 font-serif text-xs uppercase tracking-widest text-[#73636f]">
-            <button onClick={() => setActiveView("home")} className="hover:text-purple-600 transition-colors">Privacy Policy</button>
-            <button onClick={() => setActiveView("home")} className="hover:text-purple-600 transition-colors">Terms of Service</button>
-            <button onClick={() => setActiveView("home")} className="hover:text-purple-600 transition-colors">Sustainability</button>
-            <button onClick={() => setActiveView("home")} className="hover:text-purple-600 transition-colors">Contact</button>
-            {onAdminSignIn && (
-              <button 
-                onClick={onAdminSignIn} 
-                className="hover:text-[#ac2471] text-[#52003c] border-l border-purple-100 pl-4 transition-colors font-bold"
-                title="Staff login view"
-              >
-                Staff Portal
-              </button>
-            )}
-          </div>
-
-          <div className="flex gap-4">
-            <button onClick={() => setActiveView("home")} className="p-2 border border-purple-50 rounded-lg text-zinc-400 hover:text-purple-900 hover:border-purple-200 transition-colors">
-              <Share2 className="w-4 h-4" />
-            </button>
-            <button onClick={() => setActiveView("home")} className="p-2 border border-purple-50 rounded-lg text-zinc-400 hover:text-purple-900 hover:border-purple-200 transition-colors">
-              <Globe className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
       </footer>
     </div>
   );
