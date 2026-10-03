@@ -3,6 +3,25 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link id="fitstyle-favicon" rel="icon" type="image/png" href="./src/assets/images/fitstyle_ai_logo_1780811765736.png" />
+    <script>
+      const faviconLink = document.getElementById("fitstyle-favicon");
+      const faviconLogo = new Image();
+      faviconLogo.onload = () => {
+        const faviconCanvas = document.createElement("canvas");
+        faviconCanvas.width = 128;
+        faviconCanvas.height = 128;
+        const context = faviconCanvas.getContext("2d");
+        if (!context || !faviconLink) return;
+
+        context.beginPath();
+        context.arc(64, 64, 64, 0, Math.PI * 2);
+        context.clip();
+        context.drawImage(faviconLogo, 384, 64, 640, 640, 0, 0, 128, 128);
+        faviconLink.href = faviconCanvas.toDataURL("image/png");
+      };
+      faviconLogo.src = faviconLink.href;
+    </script>
     <title>Fitstyle AI</title>
   </head>
   <body>

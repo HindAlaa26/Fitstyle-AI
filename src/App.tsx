@@ -9,14 +9,6 @@ import { getCurrentUser, signOut, fetchUserAttributes, deleteUser } from "aws-am
 import "./amplifyConfig";
 import { STATIC_FALLBACK_PRODUCTS } from "./data/fallbackProducts";
 
-const createInitialCart = (catalog: Product[]): CartItem[] => {
-  return catalog.slice(0, 3).map((product, index) => ({
-    product,
-    quantity: 1,
-    badge: index === 0 ? "AI Choice" : undefined
-  }));
-};
-
 export default function App() {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [products, setProducts] = useState<Product[]>(STATIC_FALLBACK_PRODUCTS);
@@ -24,12 +16,12 @@ export default function App() {
   const [showAuth, setShowAuth] = useState(false);
 
   // Custom navigation views
-  const [currentView, setCurrentView] = useState<"home" | "my-looks" | "cart" | "fitting-studio">("home");
-  const [authRedirectTarget, setAuthRedirectTarget] = useState<"home" | "my-looks" | "fitting-studio" | null>(null);
+  const [currentView, setCurrentView] = useState<"home" | "cart" | "fitting-studio">("home");
+  const [authRedirectTarget, setAuthRedirectTarget] = useState<"home" | "fitting-studio" | null>(null);
   const [authMessage, setAuthMessage] = useState<string>("");
   const [initialOutfit, setInitialOutfit] = useState<any>(null);
   const [studioInitialStep, setStudioInitialStep] = useState(1);
-  const [cartItems, setCartItems] = useState<CartItem[]>(() => createInitialCart(STATIC_FALLBACK_PRODUCTS));
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
 
   // Initialize and load user profile + products
   useEffect(() => {
@@ -224,6 +216,21 @@ export default function App() {
     )));
   };
 
+  const addProductsToCart = (productsToAdd: Product[]) => {
+    setCartItems((items) => productsToAdd.reduce((updatedItems, product) => {
+      const existingIndex = updatedItems.findIndex((item) => item.product.id === product.id);
+      if (existingIndex >= 0) {
+        updatedItems[existingIndex] = {
+          ...updatedItems[existingIndex],
+          quantity: updatedItems[existingIndex].quantity + 1
+        };
+      } else {
+        updatedItems.push({ product, quantity: 1, badge: "Virtual Try-On" });
+      }
+      return updatedItems;
+    }, [...items]));
+  };
+
   const removeCartItem = (productId: string) => {
     setCartItems((items) => items.filter((item) => item.product.id !== productId));
   };
@@ -292,6 +299,7 @@ export default function App() {
         }}
         initialStep={studioInitialStep}
         initialOutfit={initialOutfit}
+        onAddToCart={addProductsToCart}
         onAddProduct={handleAddProduct}
         onDeleteProduct={handleDeleteProduct}
         onDeleteAccount={handleDeleteAccount}
@@ -300,7 +308,7 @@ export default function App() {
   }
 
   // Default / All sub-views under the Landing Page wrapper:
-  // Support Guest states & Logged-In Shopper Home pages (Home, My Looks, Wardrobe)
+  // Support Guest states & Logged-In Shopper Home pages
   return (
     <LandingPage 
       products={products.filter((p) => p.inStock !== false)}
@@ -328,16 +336,10 @@ export default function App() {
         setAuthRedirectTarget((redirectTarget as any) || "home");
         setShowAuth(true);
       }}
-      onAdminSignIn={() => {
-        setAuthMessage("Store Owners request portal access code below.");
-        setAuthRedirectTarget("home");
-        setShowAuth(true);
-      }}
       onEnterFittingStudio={() => {
         setStudioInitialStep(1);
         setCurrentView("fitting-studio");
       }}
-      setInitialOutfit={setInitialOutfit}
     />
   );
 }
