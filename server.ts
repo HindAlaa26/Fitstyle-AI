@@ -13,6 +13,7 @@ import {
   DeleteCommand,
   GetCommand,
 } from "@aws-sdk/lib-dynamodb";
+import { CognitoJwtVerifier } from "aws-jwt-verify";
 
 // Initialize Express
 const app = express();
@@ -502,15 +503,36 @@ app.get("/api/users/:id", async (req: Request, res: Response) => {
 
 app.put("/api/users/:id", async (req: Request, res: Response) => {
   const { id } = req.params;
-  const profile = {
+  // Merge, don't replace: only the fields sent are written, so server-owned
+  // fields like `cart` (and savedLooks etc.) are never wiped by a profile save.
+  const fields: Record<string, any> = {
     ...req.body,
     uid: id,
-    userId: id,
     role: resolveRole(req.body.email, req.body.role), // server has final say, not the client
   };
+  delete fields.userId; // key attribute, cannot be updated
+  delete fields.cart;   // only the cart API may write the cart
+  const names: Record<string, string> = {};
+  const values: Record<string, any> = {};
+  const sets: string[] = [];
+  Object.entries(fields).forEach(([key, value], i) => {
+    if (value === undefined) return;
+    names[`#k${i}`] = key;
+    values[`:v${i}`] = value;
+    sets.push(`#k${i} = :v${i}`);
+  });
   try {
-    await ddb.send(new PutCommand({ TableName: USERS_TABLE, Item: profile }));
-    res.json(profile);
+    const result: any = await ddb.send(
+      new UpdateCommand({
+        TableName: USERS_TABLE,
+        Key: { userId: id },
+        UpdateExpression: `SET ${sets.join(", ")}`,
+        ExpressionAttributeNames: names,
+        ExpressionAttributeValues: values,
+        ReturnValues: "ALL_NEW",
+      })
+    );
+    res.json(result.Attributes);
   } catch (err) {
     console.error("[DynamoDB] Failed to save user:", err);
     res.status(500).json({ error: "Failed to save user profile" });
@@ -525,6 +547,146 @@ app.delete("/api/users/:id", async (req: Request, res: Response) => {
   } catch (err) {
     console.error("[DynamoDB] Failed to delete user profile:", err);
     res.status(500).json({ error: "Failed to delete user profile" });
+  }
+});
+
+// ---------------------------------------------------------------------
+// Auth: verify the Cognito ID token sent as "Authorization: Bearer <token>".
+// The verifier is created lazily so a missing env var NEVER crashes startup.
+// ---------------------------------------------------------------------
+let cognitoVerifier: any = null;
+let authConfigWarned = false;
+
+async function requireUser(req: any, res: Response, next: any) {
+  const poolId = process.env.COGNITO_USER_POOL_ID;
+  const clientId = process.env.COGNITO_CLIENT_ID;
+  if (!poolId || !clientId) {
+    if (!authConfigWarned) {
+      console.error("[Auth] COGNITO_USER_POOL_ID / COGNITO_CLIENT_ID are not set in .env -- protected routes are disabled.");
+      authConfigWarned = true;
+    }
+    return res.status(500).json({
+      error: "Server auth is not configured: set COGNITO_USER_POOL_ID and COGNITO_CLIENT_ID in .env",
+    });
+  }
+  if (!cognitoVerifier) {
+    cognitoVerifier = CognitoJwtVerifier.create({ userPoolId: poolId, tokenUse: "id", clientId });
+  }
+  const header = String(req.headers.authorization || "");
+  const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+  if (!token) return res.status(401).json({ error: "Missing token" });
+  try {
+    const payload: any = await cognitoVerifier.verify(token);
+    req.authUserId = payload.sub;
+    next();
+  } catch {
+    return res.status(401).json({ error: "Invalid or expired token" });
+  }
+}
+
+function requireSelf(req: any, res: Response, next: any) {
+  if (req.params.userId !== req.authUserId) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  next();
+}
+
+// ---------------------------------------------------------------------
+// Cart API -- stored as attribute `cart` on the user's item in the Users table
+// (no new table, only GetItem/UpdateItem). Stores ids + quantities only; prices
+// always come from the live catalog (dbProducts).
+// ---------------------------------------------------------------------
+type CartLine = { productId: string; quantity: number; size?: string };
+
+function hydrateCart(lines: CartLine[]) {
+  const items: any[] = [];
+  const unavailable: string[] = [];
+  for (const line of lines || []) {
+    const product = dbProducts.find((p: any) => p.id === line.productId);
+    if (!product || product.inStock === false) {
+      unavailable.push(line.productId);
+      continue;
+    }
+    items.push({ product, quantity: line.quantity, size: line.size });
+  }
+  return { items, unavailable };
+}
+
+app.get("/api/cart/:userId", requireUser, requireSelf, async (req: Request, res: Response) => {
+  try {
+    const result: any = await ddb.send(
+      new GetCommand({
+        TableName: USERS_TABLE,
+        Key: { userId: req.params.userId },
+        ProjectionExpression: "#c",
+        ExpressionAttributeNames: { "#c": "cart" },
+      })
+    );
+    res.json(hydrateCart(result.Item?.cart || []));
+  } catch (err) {
+    console.error("[DynamoDB] Failed to load cart:", err);
+    res.status(500).json({ error: "Failed to load cart" });
+  }
+});
+
+app.put("/api/cart/:userId", requireUser, requireSelf, async (req: Request, res: Response) => {
+  const incoming = req.body?.items;
+  if (!Array.isArray(incoming) || incoming.length > 50) {
+    return res.status(400).json({ error: "Invalid cart" });
+  }
+  const merged = new Map<string, CartLine>();
+  for (const raw of incoming) {
+    const productId = String(raw?.productId || "");
+    const product = dbProducts.find((p: any) => p.id === productId);
+    if (!product) continue; // product was deleted from the catalog -- skip it
+    let quantity = Number(raw?.quantity);
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 10) {
+      return res.status(400).json({ error: "Invalid quantity" });
+    }
+    if (typeof product.quantity === "number") {
+      quantity = Math.min(quantity, Math.max(product.quantity, 1));
+    }
+    const size = typeof raw?.size === "string" ? raw.size.slice(0, 20) : undefined;
+    const existing = merged.get(productId);
+    if (existing) {
+      existing.quantity = Math.min(existing.quantity + quantity, 10);
+    } else {
+      merged.set(productId, { productId, quantity, ...(size ? { size } : {}) });
+    }
+  }
+  const cart = Array.from(merged.values());
+  try {
+    await ddb.send(
+      new UpdateCommand({
+        TableName: USERS_TABLE,
+        Key: { userId: req.params.userId },
+        UpdateExpression: "SET #c = :cart",
+        ExpressionAttributeNames: { "#c": "cart" },
+        ExpressionAttributeValues: { ":cart": cart },
+      })
+    );
+    res.json(hydrateCart(cart));
+  } catch (err) {
+    console.error("[DynamoDB] Failed to save cart:", err);
+    res.status(500).json({ error: "Failed to save cart" });
+  }
+});
+
+app.delete("/api/cart/:userId", requireUser, requireSelf, async (req: Request, res: Response) => {
+  try {
+    await ddb.send(
+      new UpdateCommand({
+        TableName: USERS_TABLE,
+        Key: { userId: req.params.userId },
+        UpdateExpression: "SET #c = :empty",
+        ExpressionAttributeNames: { "#c": "cart" },
+        ExpressionAttributeValues: { ":empty": [] },
+      })
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error("[DynamoDB] Failed to clear cart:", err);
+    res.status(500).json({ error: "Failed to clear cart" });
   }
 });
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import LoginView from "./components/LoginView";
 import ShopperStudioView from "./components/ShopperStudioView";
 import AdminDashboard from "./components/AdminDashboard";
@@ -8,6 +8,7 @@ import { Product, UserProfile } from "./types";
 import { getCurrentUser, signOut, fetchUserAttributes, deleteUser } from "aws-amplify/auth";
 import "./amplifyConfig";
 import { STATIC_FALLBACK_PRODUCTS } from "./data/fallbackProducts";
+import { authFetch } from "./utils/authFetch";
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
@@ -22,6 +23,78 @@ export default function App() {
   const [initialOutfit, setInitialOutfit] = useState<any>(null);
   const [studioInitialStep, setStudioInitialStep] = useState(1);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  // true only after the first successful load, so we never overwrite the saved
+  // cart with an empty one before it has been fetched
+  const cartLoadedRef = useRef(false);
+  // set right after loading so the load itself doesn't trigger a pointless save
+  const skipNextCartSaveRef = useRef(false);
+
+  // Load the user's saved cart whenever the signed-in user changes.
+  // No user (logout / delete account) => clear it from the screen only;
+  // the saved copy stays in the DB and comes back at the next login.
+  useEffect(() => {
+    cartLoadedRef.current = false;
+    const uid = currentUser?.uid;
+    if (!uid) {
+      setCartItems([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await authFetch(`/api/cart/${uid}`);
+        if (!res.ok) throw new Error(`Cart API returned ${res.status}`);
+        const data = await res.json();
+        if (cancelled) return; // user changed while the request was in flight
+        skipNextCartSaveRef.current = true;
+        setCartItems(
+          (data.items || []).map((line: any) => ({
+            product: line.product,
+            quantity: line.quantity,
+            selectedSize: line.size,
+            badge: "Virtual Try-On",
+          }))
+        );
+        cartLoadedRef.current = true;
+        if (Array.isArray(data.unavailable) && data.unavailable.length > 0) {
+          window.alert("Some items in your cart are no longer available and were removed.");
+        }
+      } catch (err) {
+        console.warn("Could not load saved cart (cart stays local for this session):", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.uid]);
+
+  // Save the cart ~600ms after the last change (add / quantity / remove).
+  useEffect(() => {
+    const uid = currentUser?.uid;
+    if (!uid || !cartLoadedRef.current) return;
+    if (skipNextCartSaveRef.current) {
+      skipNextCartSaveRef.current = false;
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        await authFetch(`/api/cart/${uid}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            items: cartItems.map((item) => ({
+              productId: item.product.id,
+              quantity: item.quantity,
+              size: item.selectedSize,
+            })),
+          }),
+        });
+      } catch (err) {
+        console.warn("Could not save cart (kept locally):", err);
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [cartItems, currentUser?.uid]);
 
   // Initialize and load user profile + products
   useEffect(() => {
@@ -216,16 +289,17 @@ export default function App() {
     )));
   };
 
-  const addProductsToCart = (productsToAdd: Product[]) => {
+  const addProductsToCart = (productsToAdd: Product[], size?: string) => {
     setCartItems((items) => productsToAdd.reduce((updatedItems, product) => {
       const existingIndex = updatedItems.findIndex((item) => item.product.id === product.id);
       if (existingIndex >= 0) {
+        // already in the cart: keep the quantity, just refresh the size
         updatedItems[existingIndex] = {
           ...updatedItems[existingIndex],
-          quantity: updatedItems[existingIndex].quantity + 1
+          selectedSize: size || updatedItems[existingIndex].selectedSize
         };
       } else {
-        updatedItems.push({ product, quantity: 1, badge: "Virtual Try-On" });
+        updatedItems.push({ product, quantity: 1, badge: "Virtual Try-On", selectedSize: size });
       }
       return updatedItems;
     }, [...items]));
