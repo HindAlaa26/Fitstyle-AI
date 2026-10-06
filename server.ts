@@ -433,32 +433,47 @@ app.delete("/api/products/:id", async (req: Request, res: Response) => {
   }
 });
 
-app.post("/api/products/:id/decrement-stock", async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const amount = Number(req.body?.amount) || 1;
+async function decrementStock(
+  id: string,
+  amount: number
+): Promise<{ ok: boolean; skipped?: boolean; reason?: string; remaining?: number }> {
   const idx = dbProducts.findIndex((p) => p.id === id);
-
-  if (idx === -1 || typeof dbProducts[idx].quantity !== "number") {
-    return res.json({ skipped: true });
-  }
-
+  if (idx === -1) return { ok: false, reason: "not_found" };
+  const current = dbProducts[idx].quantity;
+  if (typeof current !== "number") return { ok: true, skipped: true };
+  if (current < amount) return { ok: false, reason: "insufficient" };
+  const next = current - amount;
   try {
     const result: any = await ddb.send(
       new UpdateCommand({
         TableName: PRODUCTS_TABLE,
         Key: { id },
-        UpdateExpression: "SET quantity = quantity - :amt, inStock = (quantity - :amt > :zero)",
-        ConditionExpression: "quantity >= :amt",
-        ExpressionAttributeValues: { ":amt": amount, ":zero": 0 },
+        UpdateExpression: "SET quantity = :next, inStock = :flag",
+        ConditionExpression: "quantity = :current",
+        ExpressionAttributeValues: { ":next": next, ":flag": next > 0, ":current": current },
         ReturnValues: "ALL_NEW",
       })
     );
-    dbProducts[idx] = toFrontendProduct(result.Attributes);
-    res.json({ success: true, remaining: result.Attributes.quantity });
+    const i = dbProducts.findIndex((p) => p.id === id);
+    if (i !== -1) dbProducts[i] = toFrontendProduct(result.Attributes);
+    return { ok: true, remaining: next };
   } catch (err: any) {
-    if (err.name === "ConditionalCheckFailedException") {
-      return res.status(409).json({ error: "Not enough stock" });
+    if (err.name === "ConditionalCheckFailedException") return { ok: false, reason: "changed" };
+    throw err;
+  }
+}
+
+app.post("/api/products/:id/decrement-stock", async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const amount = Number(req.body?.amount) || 1;
+  try {
+    const r = await decrementStock(id, amount);
+    if (r.skipped) return res.json({ skipped: true });
+    if (!r.ok) {
+      return res.status(r.reason === "not_found" ? 404 : 409).json({ error: "Not enough stock" });
     }
+    res.json({ success: true, remaining: r.remaining });
+  } catch (err) {
     console.error("[DynamoDB] Failed to decrement stock:", err);
     res.status(500).json({ error: "Failed to update stock" });
   }
@@ -757,6 +772,146 @@ app.put("/api/orders/:orderId", async (req: Request, res: Response) => {
   }
 });
 
+// ---------------------------------------------------------------------
+// Checkout. The client sends ONLY { mode }. The server reads the saved cart,
+// recomputes every price from the catalog, creates the order, updates stock
+// and empties the cart. Online payment is simulated (test mode, no real money).
+// ---------------------------------------------------------------------
+app.post("/api/checkout", requireUser, async (req: any, res: Response) => {
+  const userId: string = req.authUserId;
+  const mode = req.body?.mode;
+  if (mode !== "online" && mode !== "offline") {
+    return res.status(400).json({ error: "mode must be 'online' or 'offline'" });
+  }
+
+  const decremented: { id: string; qty: number }[] = [];
+  const rollbackStock = async () => {
+    for (const d of decremented) {
+      try {
+        await decrementStock(d.id, -d.qty); // negative amount puts stock back
+      } catch (e) {
+        console.error("[Checkout] stock rollback failed for", d.id, e);
+      }
+    }
+  };
+
+  try {
+    const userRes: any = await ddb.send(new GetCommand({ TableName: USERS_TABLE, Key: { userId } }));
+    const user = userRes.Item || {};
+    const lines: CartLine[] = Array.isArray(user.cart) ? user.cart : [];
+    if (lines.length === 0) {
+      return res.status(400).json({ error: "Your cart is empty" });
+    }
+
+    const { items: hydrated, unavailable } = hydrateCart(lines);
+    const short = hydrated
+      .filter((h) => typeof h.product.quantity === "number" && h.product.quantity < h.quantity)
+      .map((h) => h.product.id);
+    if (unavailable.length > 0 || short.length > 0) {
+      return res.status(409).json({
+        error: "Some items are no longer available in the requested quantity. Please review your cart.",
+        unavailable: [...unavailable, ...short],
+      });
+    }
+
+    const orderItems = hydrated.map((h) => {
+      const unitPrice = Number(h.product.price) || 0;
+      return {
+        id: h.product.id,
+        name: h.product.name,
+        sku: h.product.id,
+        category: h.product.category,
+        size: h.size || h.product.size || "",
+        colour: h.product.colour || "",
+        quantity: h.quantity,
+        unitPrice,
+        lineTotal: Math.round(unitPrice * h.quantity * 100) / 100,
+        image: h.product.image || "",
+      };
+    });
+    const subtotal = Math.round(orderItems.reduce((s, i) => s + i.lineTotal, 0) * 100) / 100;
+
+    // Compatibility with the existing Wardrobe / Analytics code, which read order.outfit
+    const outfit: Record<string, any> = {};
+    for (const it of orderItems) {
+      if (!outfit[it.category]) {
+        outfit[it.category] = { id: it.id, name: it.name, price: it.unitPrice, image: it.image };
+      }
+    }
+
+    // Online: take stock now. Offline: stock is only reserved when paid in store.
+    if (mode === "online") {
+      for (const it of orderItems) {
+        const r = await decrementStock(it.id, it.quantity);
+        if (!r.ok) {
+          await rollbackStock();
+          return res.status(409).json({
+            error: "Stock changed while paying. Nothing was charged. Please review your cart.",
+            unavailable: [it.id],
+          });
+        }
+        if (!r.skipped) decremented.push({ id: it.id, qty: it.quantity });
+      }
+    }
+
+    let order: any = null;
+    for (let attempt = 0; attempt < 3 && !order; attempt++) {
+      const candidate = {
+        orderId: "FS-" + Math.random().toString(36).slice(2, 8).toUpperCase().padEnd(6, "0"),
+        userId,
+        date: new Date().toISOString(),
+        status: mode === "online" ? "Paid" : "Pending - Pay in store",
+        paymentMethod: mode === "online" ? "online-test" : "pay-in-store",
+        currency: "USD",
+        subtotal,
+        totalAmount: subtotal,
+        items: orderItems,
+        outfit,
+        sizing: orderItems[0]?.size || "M",
+        shippingAddress: mode === "online" ? "To be confirmed with customer" : "In-store pickup",
+      };
+      try {
+        await ddb.send(
+          new PutCommand({
+            TableName: ORDERS_TABLE,
+            Item: candidate,
+            ConditionExpression: "attribute_not_exists(orderId)",
+          })
+        );
+        order = candidate;
+      } catch (err: any) {
+        if (err.name !== "ConditionalCheckFailedException") throw err;
+      }
+    }
+    if (!order) throw new Error("Could not allocate an order id");
+
+    // Empty the saved cart only after the order is safely stored
+    try {
+      await ddb.send(
+        new UpdateCommand({
+          TableName: USERS_TABLE,
+          Key: { userId },
+          UpdateExpression: "SET #c = :empty",
+          ExpressionAttributeNames: { "#c": "cart" },
+          ExpressionAttributeValues: { ":empty": [] },
+        })
+      );
+    } catch (err) {
+      console.error("[Checkout] order saved but cart could not be cleared:", err);
+    }
+
+    res.status(201).json({
+      ...order,
+      customerName: user.fullName || "",
+      customerEmail: user.email || "",
+    });
+  } catch (err) {
+    await rollbackStock();
+    console.error("[Checkout] failed:", err);
+    res.status(500).json({ error: "Checkout failed. Nothing was charged. Please try again." });
+  }
+});
+
 // List all users -- used by the admin Sales Analytics dashboard (e.g. active
 // signup count). Small dataset (admin-only usage, infrequent), Scan is fine.
 app.get("/api/users", async (req: Request, res: Response) => {
@@ -800,6 +955,10 @@ app.get("/api/analytics/orders", async (req: Request, res: Response) => {
       if (outfit.bottom) itemsArr.push(outfit.bottom.name);
       if (outfit.footwear) itemsArr.push(outfit.footwear.name);
       if (outfit.accessories) itemsArr.push(outfit.accessories.name);
+      if (Array.isArray(order.items) && order.items.length > 0) {
+        itemsArr.length = 0;
+        order.items.forEach((it: any) => itemsArr.push(it.name));
+      }
 
       let computedOccasion = "Casual";
       if (outfit.top) {
@@ -818,7 +977,7 @@ app.get("/api/analytics/orders", async (req: Request, res: Response) => {
         occasion: computedOccasion,
         bodyShape: measurements.classifyDetails?.shape || "Hourglass",
         skinTone: measurements.sizeRecommendation?.skinTone || "Olive",
-        status: "Completed",
+        status: order.status || "Completed",
         items: itemsArr.length > 0 ? itemsArr : ["Apparel Pack"],
         itemsCount: itemsArr.length || 1,
       };

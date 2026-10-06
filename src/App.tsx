@@ -405,6 +405,7 @@ export default function App() {
       }}
       onUpdateCartQuantity={updateCartQuantity}
       onRemoveCartItem={removeCartItem}
+      onOrderComplete={() => setCartItems([])}
       onSignIn={(message, redirectTarget) => {
         setAuthMessage(message || "");
         setAuthRedirectTarget((redirectTarget as any) || "home");
