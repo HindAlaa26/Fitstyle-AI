@@ -40,6 +40,22 @@ export default function WardrobePage({ products, uid, onNavigateToStudio }: Ward
 
     const addOrderItems = (orders: any[], target: Product[]) => {
       orders.forEach(order => {
+        if (order && Array.isArray(order.items)) {
+          order.items.forEach((it: any) => {
+            if (it && it.id && !target.some(p => p && p.id === it.id)) {
+              target.push({
+                id: it.id,
+                name: it.name,
+                price: it.unitPrice ?? it.price ?? 0,
+                image: it.image || "https://images.unsplash.com/photo-1595777457583-95e059d581b8?auto=format&fit=crop&q=80&w=600",
+                category: (it.category || "top") as any,
+                size: it.size || order.sizing || "M",
+                colour: it.colour || "Bespoke Selection",
+                occasion: "Casual" as any
+              });
+            }
+          });
+        }
         if (order && order.outfit) {
           Object.entries(order.outfit).forEach(([cat, item]: [string, any]) => {
             if (item && item.id) {

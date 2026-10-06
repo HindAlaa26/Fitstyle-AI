@@ -9,6 +9,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { Product } from "../types";
+import CheckoutDialog from "./CheckoutDialog";
 
 export interface CartItem {
   product: Product;
@@ -22,7 +23,8 @@ interface ProductCartPageProps {
   onUpdateQuantity: (productId: string, quantity: number) => void;
   onRemoveItem: (productId: string) => void;
   onContinueShopping: () => void;
-  onProceedToPayment: () => void;
+  onProceedToPayment?: () => void; // no longer used: checkout happens in this page
+  onOrderComplete: () => void;
 }
 
 const categoryLabel = (category: Product["category"]) => ({
@@ -38,9 +40,11 @@ export default function ProductCartPage({
   onRemoveItem,
   onContinueShopping,
   onProceedToPayment,
+  onOrderComplete,
 }: ProductCartPageProps) {
   const [promoCode, setPromoCode] = useState("");
   const [promoMessage, setPromoMessage] = useState("");
+  const [checkoutMode, setCheckoutMode] = useState<"online" | "offline" | null>(null);
   const itemCount = cartItems.reduce((total, item) => total + item.quantity, 0);
   const subtotal = useMemo(
     () => cartItems.reduce((total, item) => total + item.product.price * item.quantity, 0),
@@ -92,9 +96,20 @@ export default function ProductCartPage({
           </section>
 
           <aside className="space-y-4 lg:sticky lg:top-24">
-            <section className="rounded-3xl border border-purple-100 bg-white p-5 shadow-sm md:p-6"><h2 className="font-serif text-2xl font-bold text-purple-950">Order Summary</h2><div className="mt-6 space-y-3 text-xs text-zinc-500"><div className="flex justify-between"><span>Items ({itemCount})</span><span className="font-semibold text-slate-700">${subtotal.toFixed(2)}</span></div><div className="flex justify-between"><span>AI Styling Fee</span><span className="font-bold text-emerald-600">FREE</span></div><div className="flex justify-between"><span>Shipping</span><span className="text-right">Calculated at checkout</span></div></div><div className="my-5 border-t border-purple-50" /><div className="flex items-end justify-between"><span className="text-xs font-bold uppercase tracking-wider text-purple-950">Total</span><span className="font-serif text-3xl font-bold text-purple-950">${subtotal.toFixed(2)}</span></div><div className="mt-6"><label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Have a promo code?</label><div className="mt-2 flex gap-2"><input value={promoCode} onChange={(event) => setPromoCode(event.target.value)} placeholder="Enter code" className="min-w-0 flex-1 rounded-lg border border-purple-100 bg-[#fffbfd] px-3 py-2 text-xs outline-none focus:border-[#ac2471]" /><button type="button" onClick={applyPromoCode} className="rounded-lg border border-purple-950 px-3 py-2 text-[10px] font-bold tracking-wider text-purple-950 hover:bg-purple-50">APPLY</button></div>{promoMessage && <p className="mt-2 text-[10px] text-[#ac2471]">{promoMessage}</p>}</div></section>
+            <section className="rounded-3xl border border-purple-100 bg-white p-5 shadow-sm md:p-6"><h2 className="font-serif text-2xl font-bold text-purple-950">Order Summary</h2><div className="mt-6 space-y-3 text-xs text-zinc-500"><div className="flex justify-between"><span>Items ({itemCount})</span><span className="font-semibold text-slate-700">${subtotal.toFixed(2)}</span></div><div className="flex justify-between"><span>AI Styling Fee</span><span className="font-bold text-emerald-600">FREE</span></div><div className="flex justify-between"><span>Shipping</span><span className="text-right">Calculated at checkout</span></div></div><div className="my-5 border-t border-purple-50" /><div className="flex items-end justify-between"><span className="text-xs font-bold uppercase tracking-wider text-purple-950">Total</span><span className="font-serif text-3xl font-bold text-purple-950">${subtotal.toFixed(2)}</span></div><div className="mt-6"><label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Have a promo code?</label><div className="mt-2 flex gap-2"><input value={promoCode} onChange={(event) => setPromoCode(event.target.value)} placeholder="Enter code" className="min-w-0 flex-1 rounded-lg border border-purple-100 bg-[#fffbfd] px-3 py-2 text-xs outline-none focus:border-[#ac2471]" /><button type="button" onClick={applyPromoCode} className="rounded-lg border border-purple-950 px-3 py-2 text-[10px] font-bold tracking-wider text-purple-950 hover:bg-purple-50">APPLY</button></div>{promoMessage && <p className="mt-2 text-[10px] text-[#ac2471]">{promoMessage}</p>}</div><div className="mt-6 space-y-2"><button type="button" onClick={() => setCheckoutMode("online")} className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#5a005a] px-4 py-2.5 text-[9px] font-extrabold uppercase tracking-wider text-white shadow-sm transition hover:bg-[#470646] active:scale-[0.99]">Buy Online <ArrowRight className="h-3 w-3" /></button><button type="button" onClick={() => setCheckoutMode("offline")} className="flex w-full items-center justify-center gap-2 rounded-lg border border-[#5a005a] bg-white px-4 py-2.5 text-[9px] font-extrabold uppercase tracking-wider text-[#5a005a] transition hover:bg-[#fbf5fa] active:scale-[0.99]">Pay Offline <ArrowRight className="h-3 w-3" /></button></div></section>
             <button type="button" onClick={onContinueShopping} className="inline-flex items-center gap-2 px-2 text-[10px] font-bold uppercase tracking-wider text-purple-900 hover:text-[#ac2471]"><ArrowLeft className="h-3.5 w-3.5" /> Continue Shopping</button>
           </aside>
+          {checkoutMode && (
+            <CheckoutDialog
+              mode={checkoutMode}
+              cartItems={cartItems}
+              onClose={() => setCheckoutMode(null)}
+              onDone={() => {
+                setCheckoutMode(null);
+                onOrderComplete(); // clears the cart on screen (the server already emptied it)
+              }}
+            />
+          )}
         </div>
       </div>
     </main>

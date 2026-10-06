@@ -31,6 +31,7 @@ interface LandingPageProps {
   onProceedToPayment: () => void;
   onUpdateCartQuantity: (productId: string, quantity: number) => void;
   onRemoveCartItem: (productId: string) => void;
+  onOrderComplete: () => void;
 }
 
 export default function LandingPage({ 
@@ -46,7 +47,8 @@ export default function LandingPage({
   onOpenCart,
   onProceedToPayment,
   onUpdateCartQuantity,
-  onRemoveCartItem
+  onRemoveCartItem,
+  onOrderComplete
 }: LandingPageProps) {
   const [showDropdown, setShowDropdown] = useState(false);
   const [settingsActive, setSettingsActive] = useState(false);
@@ -192,6 +194,7 @@ export default function LandingPage({
             onRemoveItem={onRemoveCartItem}
             onContinueShopping={() => setActiveView("home")}
             onProceedToPayment={onProceedToPayment}
+            onOrderComplete={onOrderComplete}
           />
         )}
 
