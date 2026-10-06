@@ -126,7 +126,7 @@ interface ShopperStudioViewProps {
   onBackToPortal?: () => void;
   initialStep?: number;
   initialOutfit?: any;
-  onAddToCart?: (items: Product[]) => void;
+  onAddToCart?: (items: Product[], size?: string) => void;
   onAddProduct?: (newProd: Omit<Product, "id"> & { id?: string }) => Promise<void> | void;
   onDeleteProduct?: (id: string) => Promise<void> | void;
 }
@@ -3232,7 +3232,7 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
     };
     const handleAddSelectedToCart = () => {
       if (selectedItems.length === 0 || !onAddToCart) return;
-      onAddToCart(selectedItems);
+      onAddToCart(selectedItems, selectedSize);
       setCartAddFeedback(true);
       window.setTimeout(() => setCartAddFeedback(false), 1800);
     };
