@@ -33,6 +33,12 @@ export interface RecoResponse {
   outfits: RecoOutfit[];
 }
 
+/** The catalogue has no XS/XXL stock - same mapping the server applies. */
+export const toCatalogSize = (size: string): string => {
+  const s = String(size || "M").trim().toUpperCase();
+  return s === "XS" ? "S" : s === "XXL" ? "XL" : s;
+};
+
 const toQuery = (p: RecoProfileParams) => {
   const q = new URLSearchParams({ size: p.size, bodyShape: p.bodyShape, occasion: p.occasion });
   if (p.season) q.set("season", p.season);

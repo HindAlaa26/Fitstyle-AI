@@ -115,7 +115,7 @@ export function buildRecommendations(profile: RecoProfile, products: any[]) {
     for (const it of o.items) {
       const p = byId.get(String(it.product_id));
       if (!isPurchasable(p, profile.size)) { ok = false; break; }
-      items.push({ ...p, garmentCategory: it.category, articleType: it.article_type || "" });
+      items.push({ ...p, size: profile.size, availableSizes: p.size, garmentCategory: it.category, articleType: it.article_type || "" });
     }
     if (!ok || items.length === 0) continue; // drop outfits whose pieces are gone / out of stock
     items.sort((a, b) => GARMENT_ORDER.indexOf(a.garmentCategory) - GARMENT_ORDER.indexOf(b.garmentCategory));
@@ -143,7 +143,7 @@ export function buildAlternatives(profile: RecoProfile, category: string, produc
     .map((r) => ({ p: byId.get(String(r.id)), rel: r.rel }))
     .filter((x) => isPurchasable(x.p, profile.size))
     .slice(0, limit)
-    .map((x) => ({ ...x.p, garmentCategory: category, relevance: x.rel }));
+    .map((x) => ({ ...x.p, size: profile.size, availableSizes: x.p.size, garmentCategory: category, relevance: x.rel }));
   return { status: 200 as const, body: { category, items } };
 }
 
