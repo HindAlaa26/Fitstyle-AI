@@ -14,6 +14,7 @@ import {
   RecoProfileParams,
   fetchRecommendations,
   fetchAlternatives,
+  toCatalogSize,
   fetchExplanation,
 } from "../utils/recommendationsApi";
 
@@ -1227,7 +1228,8 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
   // ---- Outfit recommendations (pre-computed model output, served by /api/recommendations) ----
   const [recoOutfits, setRecoOutfits] = useState<RecoOutfit[]>([]);
   const [recoIndex, setRecoIndex] = useState<number>(0);
-  const [recoItems, setRecoItems] = useState<RecoItem[]>([]); // current selection (may be customised by the shopper)
+  const [recoItems, setRecoItems] = useState<RecoItem[]>([]); // every piece of the current outfit (may be customised)
+  const [recoDeselected, setRecoDeselected] = useState<string[]>([]); // pieces unticked on the right (kept in the outfit, just unselected)
   const [recoLoading, setRecoLoading] = useState<boolean>(false);
   const [recoError, setRecoError] = useState<string | null>(null);
   const [recoNote, setRecoNote] = useState<string | null>(null);
@@ -2126,6 +2128,8 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
     occasion: chosenOccasion,
   };
 
+  const recoSelectedItems = recoItems.filter((i) => !recoDeselected.includes(i.id));
+
   // 1) Load the 5 recommended outfits when Step 3 opens (and when shape / size / occasion change).
   useEffect(() => {
     if (currentStep !== 3 || !currentUser) return;
@@ -2141,6 +2145,7 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
         setRecoOutfits(data.outfits);
         setRecoIndex(0);
         setRecoItems(data.outfits[0]?.items || []);
+        setRecoDeselected([]);
         setRecoNote(
           data.relaxed?.length
             ? `Closest matches: limited stock for ${data.relaxed.join(" and ")} in your size.`
@@ -2163,45 +2168,52 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
   // 2) Keep the legacy 4-slot selection (used by Create Order / PDF / swap flows) in sync.
   useEffect(() => {
     if (!recoActive) return;
-    const dress = recoItems.find((i) => i.garmentCategory === "Dress");
+    const dress = recoSelectedItems.find((i) => i.garmentCategory === "Dress");
     setSelectedOutfit({
-      top: dress || recoItems.find((i) => i.garmentCategory === "Top") || null,
-      bottom: recoItems.find((i) => i.garmentCategory === "Bottom") || null,
-      footwear: recoItems.find((i) => i.garmentCategory === "Shoes") || null,
-      accessories: recoItems.find((i) => i.garmentCategory === "Accessory") || null,
+      top: dress || recoSelectedItems.find((i) => i.garmentCategory === "Top") || null,
+      bottom: recoSelectedItems.find((i) => i.garmentCategory === "Bottom") || null,
+      footwear: recoSelectedItems.find((i) => i.garmentCategory === "Shoes") || null,
+      accessories: recoSelectedItems.find((i) => i.garmentCategory === "Accessory") || null,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recoItems, recoActive]);
+  }, [recoItems, recoDeselected, recoActive]);
 
   // 3) LLM justification - refreshed whenever the outfit (or any single product) changes.
   useEffect(() => {
-    if (!recoActive || recoItems.length === 0 || currentStep !== 3) return;
+    if (!recoActive || recoSelectedItems.length === 0 || currentStep !== 3) return;
     let cancelled = false;
     const timer = window.setTimeout(() => {
       setRecoExplLoading(true);
-      fetchExplanation(recoParams, recoItems.map((i) => i.id))
+      fetchExplanation(recoParams, recoSelectedItems.map((i) => i.id))
         .then((ex) => { if (!cancelled) setRecoExplanation(ex); })
         .catch(() => { if (!cancelled) setRecoExplanation(recoOutfits[recoIndex]?.explanation || null); })
         .finally(() => { if (!cancelled) setRecoExplLoading(false); });
     }, 450);
     return () => { cancelled = true; window.clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recoItems.map((i) => i.id).join(","), currentStep, recoActive]);
+  }, [recoSelectedItems.map((i) => i.id).join(","), currentStep, recoActive]);
 
   const handleSelectRecoOutfit = (index: number) => {
     const outfit = recoOutfits[index];
     if (!outfit) return;
     setRecoIndex(index);
     setRecoItems(outfit.items);
+    setRecoDeselected([]);
     setRecoExplanation(outfit.explanation || null);
   };
 
   const handleSwapRecoItem = (category: RecoItem["garmentCategory"], item: RecoItem) => {
+    const replaced = recoItems.find((i) => i.garmentCategory === category);
+    setRecoDeselected((previous) => (replaced ? previous.filter((id) => id !== replaced.id) : previous));
     setRecoItems((previous) =>
       previous.some((i) => i.garmentCategory === category)
         ? previous.map((i) => (i.garmentCategory === category ? item : i))
         : [...previous, item]
     );
+  };
+
+  const handleToggleRecoItem = (id: string) => {
+    setRecoDeselected((previous) => (previous.includes(id) ? previous.filter((x) => x !== id) : [...previous, id]));
   };
 
   // Swapping items triggers
@@ -3323,7 +3335,7 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
 
   const renderStep3 = () => {
     const legacyItems = [selectedOutfit.top, selectedOutfit.bottom, selectedOutfit.footwear, selectedOutfit.accessories].filter((item): item is Product => Boolean(item));
-    const selectedItems: Product[] = recoActive ? recoItems : legacyItems;
+    const selectedItems: Product[] = recoActive ? recoSelectedItems : legacyItems;
     const recoCustomised = recoActive && recoOutfits[recoIndex]
       ? recoOutfits[recoIndex].items.map((i) => i.id).join(",") !== recoItems.map((i) => i.id).join(",")
       : false;
@@ -3331,7 +3343,11 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
     const collectionItems = products.filter((product) => product.inStock !== false).slice(0, 6);
     const previewImage = tryOnUrl || selectedPhoto || selectedItems[0]?.image;
     const removeItem = (productId: string) => {
-      if (recoActive) setRecoItems((previous) => previous.filter((i) => i.id !== productId));
+      if (recoActive) {
+        // keep the piece in the outfit on the left, just untick it
+        setRecoDeselected((previous) => (previous.includes(productId) ? previous : [...previous, productId]));
+        return;
+      }
       setSelectedOutfit((previous) => ({
         top: previous.top?.id === productId ? null : previous.top,
         bottom: previous.bottom?.id === productId ? null : previous.bottom,
@@ -3345,7 +3361,7 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
     };
     const handleAddSelectedToCart = () => {
       if (selectedItems.length === 0 || !onAddToCart) return;
-      onAddToCart(selectedItems, selectedSize);
+      onAddToCart(selectedItems, recoActive ? toCatalogSize(selectedSize) : selectedSize);
       setCartAddFeedback(true);
       window.setTimeout(() => setCartAddFeedback(false), 1800);
     };
@@ -3371,9 +3387,12 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
                   outfits={recoOutfits}
                   activeIndex={recoIndex}
                   currentItems={recoItems}
+                  deselectedIds={recoDeselected}
+                  sizeLabel={toCatalogSize(selectedSize)}
+                  onToggleItem={handleToggleRecoItem}
                   loading={recoLoading}
                   error={recoError}
-                  note={recoNote}
+                  note={[recoNote, toCatalogSize(selectedSize) !== String(selectedSize).toUpperCase() ? `Showing size ${toCatalogSize(selectedSize)} - the closest in stock to your ${selectedSize}.` : null].filter(Boolean).join(" ")}
                   onSelectOutfit={handleSelectRecoOutfit}
                   onSwapItem={handleSwapRecoItem}
                   loadAlternatives={(category) => fetchAlternatives(recoParams, category)}
