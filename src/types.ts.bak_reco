@@ -1,6 +1,5 @@
 export type CategoryType = "top" | "bottom" | "footwear" | "accessories";
 export type OccasionType = "Wedding" | "Casual" | "Formal" | "Party" | "Interview";
-export type GarmentCategory = "Dress" | "Top" | "Bottom" | "Shoes" | "Outerwear" | "Accessory";
 export type BodyShapeType = "Hourglass" | "Pear" | "Apple" | "Rectangle" | "Inverted Triangle";
 
 export interface Product {
@@ -17,7 +16,6 @@ export interface Product {
   inStock?: boolean;
   quantity?: number;
   season?: string;
-  garmentCategory?: GarmentCategory | "";
 }
 
 export interface UserProfile {
