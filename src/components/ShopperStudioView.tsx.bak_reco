@@ -5,17 +5,6 @@ import { jsPDF } from "jspdf";
 import ReactMarkdown from "react-markdown";
 import emailjs from '@emailjs/browser';
 import { detectJointsFromImage } from "../utils/poseDetection";
-import OutfitRecommendationPanel from "./OutfitRecommendationPanel";
-import OutfitWhyCard from "./OutfitWhyCard";
-import {
-  RecoItem,
-  RecoOutfit,
-  RecoExplanation,
-  RecoProfileParams,
-  fetchRecommendations,
-  fetchAlternatives,
-  fetchExplanation,
-} from "../utils/recommendationsApi";
 
 // Asynchronous helper to create a high-quality rounded clipping base64 image or a category emoji placeholder
 const getRoundedProductImage = async (url: string | undefined, emoji: string): Promise<string> => {
@@ -1224,18 +1213,6 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
   const [swapCategory, setSwapCategory] = useState<"top" | "bottom" | "footwear" | "accessories" | null>(null);
   const [swapSearchQuery, setSwapSearchQuery] = useState("");
 
-  // ---- Outfit recommendations (pre-computed model output, served by /api/recommendations) ----
-  const [recoOutfits, setRecoOutfits] = useState<RecoOutfit[]>([]);
-  const [recoIndex, setRecoIndex] = useState<number>(0);
-  const [recoItems, setRecoItems] = useState<RecoItem[]>([]); // current selection (may be customised by the shopper)
-  const [recoLoading, setRecoLoading] = useState<boolean>(false);
-  const [recoError, setRecoError] = useState<string | null>(null);
-  const [recoNote, setRecoNote] = useState<string | null>(null);
-  const [recoExplanation, setRecoExplanation] = useState<RecoExplanation | null>(null);
-  const [recoExplLoading, setRecoExplLoading] = useState<boolean>(false);
-  const lastRecoKeyRef = useRef<string>("");
-  const recoActive = recoOutfits.length > 0;
-
   useEffect(() => {
     if (!swapCategory) {
       setSwapSearchQuery("");
@@ -2117,91 +2094,6 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
     setFashnStatus("idle");
     setFashnErrorText(null);
     triggerTryOn();
-  };
-
-  // ---------------- Outfit recommendations: load, customise, explain, try-on ----------------
-  const recoParams: RecoProfileParams = {
-    size: selectedSize,
-    bodyShape: classifyDetails.shape,
-    occasion: chosenOccasion,
-  };
-
-  // 1) Load the 5 recommended outfits when Step 3 opens (and when shape / size / occasion change).
-  useEffect(() => {
-    if (currentStep !== 3 || !currentUser) return;
-    const key = `${currentUser.uid}|${selectedSize}|${classifyDetails.shape}|${chosenOccasion}`;
-    if (key === lastRecoKeyRef.current && recoOutfits.length > 0) return; // keep the shopper's customised pick
-    let cancelled = false;
-    setRecoLoading(true);
-    setRecoError(null);
-    fetchRecommendations(recoParams)
-      .then((data) => {
-        if (cancelled) return;
-        lastRecoKeyRef.current = key;
-        setRecoOutfits(data.outfits);
-        setRecoIndex(0);
-        setRecoItems(data.outfits[0]?.items || []);
-        setRecoNote(
-          data.relaxed?.length
-            ? `Closest matches: limited stock for ${data.relaxed.join(" and ")} in your size.`
-            : null
-        );
-        if (data.outfits.length === 0) setRecoError("No outfits available for this profile right now.");
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setRecoOutfits([]);
-        setRecoItems([]);
-        setRecoError(null); // fall back silently to the legacy collection list
-        console.warn("[Reco] unavailable, using legacy collections:", e?.message);
-      })
-      .finally(() => { if (!cancelled) setRecoLoading(false); });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentStep, currentUser?.uid, selectedSize, classifyDetails.shape, chosenOccasion]);
-
-  // 2) Keep the legacy 4-slot selection (used by Create Order / PDF / swap flows) in sync.
-  useEffect(() => {
-    if (!recoActive) return;
-    const dress = recoItems.find((i) => i.garmentCategory === "Dress");
-    setSelectedOutfit({
-      top: dress || recoItems.find((i) => i.garmentCategory === "Top") || null,
-      bottom: recoItems.find((i) => i.garmentCategory === "Bottom") || null,
-      footwear: recoItems.find((i) => i.garmentCategory === "Shoes") || null,
-      accessories: recoItems.find((i) => i.garmentCategory === "Accessory") || null,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recoItems, recoActive]);
-
-  // 3) LLM justification - refreshed whenever the outfit (or any single product) changes.
-  useEffect(() => {
-    if (!recoActive || recoItems.length === 0 || currentStep !== 3) return;
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      setRecoExplLoading(true);
-      fetchExplanation(recoParams, recoItems.map((i) => i.id))
-        .then((ex) => { if (!cancelled) setRecoExplanation(ex); })
-        .catch(() => { if (!cancelled) setRecoExplanation(recoOutfits[recoIndex]?.explanation || null); })
-        .finally(() => { if (!cancelled) setRecoExplLoading(false); });
-    }, 450);
-    return () => { cancelled = true; window.clearTimeout(timer); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recoItems.map((i) => i.id).join(","), currentStep, recoActive]);
-
-  const handleSelectRecoOutfit = (index: number) => {
-    const outfit = recoOutfits[index];
-    if (!outfit) return;
-    setRecoIndex(index);
-    setRecoItems(outfit.items);
-    setRecoExplanation(outfit.explanation || null);
-  };
-
-  const handleSwapRecoItem = (category: RecoItem["garmentCategory"], item: RecoItem) => {
-    setRecoItems((previous) =>
-      previous.some((i) => i.garmentCategory === category)
-        ? previous.map((i) => (i.garmentCategory === category ? item : i))
-        : [...previous, item]
-    );
   };
 
   // Swapping items triggers
@@ -3322,16 +3214,11 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
   };
 
   const renderStep3 = () => {
-    const legacyItems = [selectedOutfit.top, selectedOutfit.bottom, selectedOutfit.footwear, selectedOutfit.accessories].filter((item): item is Product => Boolean(item));
-    const selectedItems: Product[] = recoActive ? recoItems : legacyItems;
-    const recoCustomised = recoActive && recoOutfits[recoIndex]
-      ? recoOutfits[recoIndex].items.map((i) => i.id).join(",") !== recoItems.map((i) => i.id).join(",")
-      : false;
+    const selectedItems = [selectedOutfit.top, selectedOutfit.bottom, selectedOutfit.footwear, selectedOutfit.accessories].filter((item): item is Product => Boolean(item));
     const selectedTotal = selectedItems.reduce((total, item) => total + item.price, 0);
     const collectionItems = products.filter((product) => product.inStock !== false).slice(0, 6);
     const previewImage = tryOnUrl || selectedPhoto || selectedItems[0]?.image;
     const removeItem = (productId: string) => {
-      if (recoActive) setRecoItems((previous) => previous.filter((i) => i.id !== productId));
       setSelectedOutfit((previous) => ({
         top: previous.top?.id === productId ? null : previous.top,
         bottom: previous.bottom?.id === productId ? null : previous.bottom,
@@ -3365,28 +3252,14 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
           <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(220px,1fr)_minmax(440px,2fr)_minmax(260px,1fr)]">
             <section className="flex min-h-[620px] flex-col rounded-3xl border border-[#ecddec] bg-white p-4 shadow-sm md:p-5">
               <div className="border-b border-[#f1e8f2] pb-4"><h3 className="font-playfair text-2xl font-bold text-[#1d1327]">Collections</h3><p className="mt-1 text-[9px] font-extrabold uppercase tracking-[0.18em] text-[#ac2471]">Curated for your style DNA</p></div>
-              {(recoActive || recoLoading) && (
-                <OutfitRecommendationPanel
-                  profileLabel={`${classifyDetails.shape} · ${selectedSize} · ${chosenOccasion}`}
-                  outfits={recoOutfits}
-                  activeIndex={recoIndex}
-                  currentItems={recoItems}
-                  loading={recoLoading}
-                  error={recoError}
-                  note={recoNote}
-                  onSelectOutfit={handleSelectRecoOutfit}
-                  onSwapItem={handleSwapRecoItem}
-                  loadAlternatives={(category) => fetchAlternatives(recoParams, category)}
-                />
-              )}
-              <div className={recoActive || recoLoading ? "hidden" : "mt-4 flex-1 space-y-4 overflow-y-auto pr-1"}>
+              <div className="mt-4 flex-1 space-y-4 overflow-y-auto pr-1">
                 <div><div className="mb-2 flex items-center justify-between text-[9px] font-extrabold uppercase tracking-wider text-slate-400"><span>Dresses</span><span>12 items</span></div><div className="space-y-2">{collectionItems.filter((item) => item.category === "top").slice(0, 3).map((item) => <button type="button" key={item.id} onClick={() => setSelectedOutfit((previous) => ({ ...previous, top: item }))} className={`flex w-full gap-3 rounded-xl border p-2 text-left transition ${selectedOutfit.top?.id === item.id ? "border-[#5a005a] bg-[#fbf5fa] ring-1 ring-[#5a005a]/10" : "border-[#f1e8f2] hover:border-[#d9b9d9]"}`}><img src={item.image} alt={item.name} className="h-16 w-12 rounded-lg object-cover" /><span className="min-w-0 flex-1"><strong className="block truncate text-[11px] text-[#1d1327]">{item.name}</strong><span className="mt-1 block text-[10px] text-slate-500">${item.price}</span><span className="mt-1 block text-[8px] font-bold uppercase tracking-wider text-[#ac2471]">{selectedOutfit.top?.id === item.id ? "AI Choice" : item.size}</span></span></button>)}</div></div>
                 <div><div className="mb-2 flex items-center justify-between text-[9px] font-extrabold uppercase tracking-wider text-slate-400"><span>Tops</span><span>24 items</span></div><div className="space-y-2">{collectionItems.filter((item) => item.category === "top").slice(3, 5).map((item) => <button type="button" key={item.id} onClick={() => setSelectedOutfit((previous) => ({ ...previous, top: item }))} className="flex w-full gap-3 rounded-xl border border-[#f1e8f2] p-2 text-left transition hover:border-[#d9b9d9]"><img src={item.image} alt={item.name} className="h-16 w-12 rounded-lg object-cover" /><span className="min-w-0 flex-1"><strong className="block truncate text-[11px] text-[#1d1327]">{item.name}</strong><span className="mt-1 block text-[10px] text-slate-500">${item.price}</span><span className="mt-1 block text-[8px] text-slate-400">{item.size}</span></span></button>)}</div></div>
               </div>
               <button type="button" onClick={generateLook} disabled={lookGenerating} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#580a58] px-4 py-3 text-[10px] font-extrabold uppercase tracking-wider text-white shadow-sm transition hover:bg-[#450645] disabled:cursor-wait disabled:opacity-70">{lookGenerating ? <><RefreshCw className="h-3.5 w-3.5 animate-spin" /> Rendering Look...</> : <><Sparkles className="h-3.5 w-3.5" /> Generate Look</>}</button>
             </section>
 
-            <section className="rounded-3xl border border-[#ecddec] bg-white p-4 shadow-sm md:p-5"><div className="relative overflow-hidden rounded-2xl bg-[#e9e2e9] shadow-inner"><div className="aspect-[4/5] min-h-[520px] md:min-h-[620px]">{previewImage ? <img src={previewImage} alt="Virtual try-on preview" className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-center text-xs text-slate-500">Upload a photo in Step 1 to preview your look.</div>}</div><div className="absolute left-4 top-4 inline-flex items-center gap-2 rounded-full border border-white/50 bg-white/85 px-3 py-1.5 text-[9px] font-bold text-[#1d1327] shadow-sm backdrop-blur"><span className="h-2 w-2 rounded-full bg-emerald-500" /> Virtual Fitting Active</div><span className="absolute bottom-4 right-4 rounded-md bg-black/60 px-2.5 py-1.5 text-[8px] font-bold tracking-[0.16em] text-white">RENDER: 4K PHOTONIC</span><div className="pointer-events-none absolute left-1/2 top-1/2 h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/70"><span className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white" /></div></div>{recoActive && <OutfitWhyCard explanation={recoExplanation || recoOutfits[recoIndex]?.explanation || null} loading={recoExplLoading} customised={recoCustomised} />}<p className="mt-4 text-center font-playfair text-xl italic text-[#580a58]">Effortless <span className="not-italic text-[#d2a5c9]">•</span> Intelligent <span className="not-italic text-[#d2a5c9]">•</span> Serene</p></section>
+            <section className="rounded-3xl border border-[#ecddec] bg-white p-4 shadow-sm md:p-5"><div className="relative overflow-hidden rounded-2xl bg-[#e9e2e9] shadow-inner"><div className="aspect-[4/5] min-h-[520px] md:min-h-[620px]">{previewImage ? <img src={previewImage} alt="Virtual try-on preview" className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-center text-xs text-slate-500">Upload a photo in Step 1 to preview your look.</div>}</div><div className="absolute left-4 top-4 inline-flex items-center gap-2 rounded-full border border-white/50 bg-white/85 px-3 py-1.5 text-[9px] font-bold text-[#1d1327] shadow-sm backdrop-blur"><span className="h-2 w-2 rounded-full bg-emerald-500" /> Virtual Fitting Active</div><span className="absolute bottom-4 right-4 rounded-md bg-black/60 px-2.5 py-1.5 text-[8px] font-bold tracking-[0.16em] text-white">RENDER: 4K PHOTONIC</span><div className="pointer-events-none absolute left-1/2 top-1/2 h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/70"><span className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white" /></div></div><p className="mt-4 text-center font-playfair text-xl italic text-[#580a58]">Effortless <span className="not-italic text-[#d2a5c9]">•</span> Intelligent <span className="not-italic text-[#d2a5c9]">•</span> Serene</p></section>
 
             <section className="flex flex-col rounded-3xl border border-[#ecddec] bg-white p-5 shadow-sm md:p-6"><div className="border-b border-[#f1e8f2] pb-4"><h3 className="font-playfair text-2xl font-bold text-[#1d1327]">Your Selection</h3><p className="mt-2 text-[10px] font-extrabold uppercase tracking-wider text-[#ac2471]">✦ AI Style Harmony: 98%</p></div><div className="mt-2 flex-1 divide-y divide-[#f1e8f2]">{selectedItems.length === 0 ? <p className="py-8 text-center text-xs text-slate-400">No pieces selected yet.</p> : selectedItems.map((item) => <div key={item.id} className="flex items-center gap-3 py-4"><img src={item.image} alt={item.name} className="h-14 w-12 rounded-lg object-cover" /><div className="min-w-0 flex-1"><p className="truncate text-[11px] font-bold text-[#1d1327]">{item.name}</p><p className="mt-1 text-[10px] text-slate-500">Size: {item.size}</p><p className="mt-1 font-serif text-sm font-bold text-[#580a58]">${item.price.toFixed(2)}</p></div><button type="button" aria-label={`Remove ${item.name}`} onClick={() => removeItem(item.id)} className="rounded-full p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"><span className="text-lg leading-none">×</span></button></div>)}</div><div className="mt-4 border-t border-[#f1e8f2] pt-4 text-xs text-slate-500"><div className="flex justify-between"><span>Items ({selectedItems.length})</span><span>${selectedTotal.toFixed(2)}</span></div><div className="mt-2 flex justify-between"><span>AI Styling Fee</span><span className="font-bold text-emerald-600">FREE</span></div><div className="my-4 border-t border-[#f1e8f2]" /><div className="flex items-end justify-between"><span className="font-bold uppercase tracking-wider text-[#1d1327]">Total</span><span className="font-playfair text-2xl font-bold text-[#580a58]">${selectedTotal.toFixed(2)}</span></div><button type="button" onClick={() => setCurrentStep(4)} disabled={selectedItems.length === 0} className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-[#5a005a] px-4 py-3.5 text-[10px] font-extrabold uppercase tracking-wider text-white shadow-sm transition hover:bg-[#470646] disabled:cursor-not-allowed disabled:opacity-40">Continue to Create Order <ArrowRight className="h-4 w-4" /></button><button type="button" onClick={handleAddSelectedToCart} disabled={selectedItems.length === 0 || !onAddToCart} className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-[#5a005a] bg-white px-4 py-3.5 text-[10px] font-extrabold uppercase tracking-wider text-[#5a005a] transition hover:bg-[#fbf5fa] disabled:cursor-not-allowed disabled:opacity-40">{cartAddFeedback ? <><CheckCircle2 className="h-4 w-4" /> Added to Cart</> : <><ShoppingBag className="h-4 w-4" /> Add to Cart</>}</button></div></section>
           </div>
