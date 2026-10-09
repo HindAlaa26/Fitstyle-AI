@@ -989,7 +989,7 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
       userMessage = "This image could not be analyzed. Please upload a clear full-body photograph of a real person.";
     } else if (errorCode === "unusable_photo" || status === 422) {
       errorIcon = "🖼️";
-      userMessage = "Please upload a real photograph. Cartoons and illustrations cannot be analyzed.";
+      userMessage = message || "The size model could not detect a person. Upload a clear, well-lit, full-body photo with the head and feet visible.";
     } else {
       errorIcon = "⚠️";
       userMessage = "Gemma Sizing Engine is currently unavailable. Please try again in a moment.";
@@ -1186,7 +1186,8 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
   const [hauteStylistResult, setHauteStylistResult] = useState<any>(null);
   const [recalibrated, setRecalibrated] = useState<boolean>(false);
   const [validationResult, setValidationResult] = useState<any>(null);
-  const [annotatedImage, setAnnotatedImage] = useState<string | null>(null);
+  const [measurementLinePositions, setMeasurementLinePositions] = useState<{ shoulder: number; waist: number; hip: number } | null>(null);
+  const [photoNaturalSize, setPhotoNaturalSize] = useState<{ width: number; height: number } | null>(null);
   const [isValidationLogOpen, setIsValidationLogOpen] = useState<boolean>(false);
 
   // Selected outfits mapping (Top, Bottom, Footwear, Accessories)
@@ -1539,8 +1540,19 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
         data.body_analysis.confidence = validated.confidence;
       }
       setValidationResult(validated);
-      // Present only when the real FitVerse model produced this result
-      setAnnotatedImage(bodyAnalysis.annotated_image_base64 || null);
+      const detectedLines = bodyAnalysis.line_positions;
+      setMeasurementLinePositions(
+        detectedLines &&
+          [detectedLines.shoulder, detectedLines.waist, detectedLines.hip].every(
+            (position) => Number.isFinite(position) && position >= 0 && position <= 1
+          )
+          ? {
+              shoulder: detectedLines.shoulder,
+              waist: detectedLines.waist,
+              hip: detectedLines.hip
+            }
+          : null
+      );
 
       const shoulderSize = validated.shoulders_in;
       const waistSize = validated.waist_in;
@@ -1723,7 +1735,10 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
       setHauteStylistResult(null);
       setGemmaJoints(null);
       setAiCalibrationData(null);
+      setMeasurementLinePositions(null);
+      setPhotoNaturalSize(null);
       setPoints(INITIAL_DEFAULT_POINTS);
+      setHeightCm(0);
       setShoulderSize(0);
       setWaistSize(0);
       setHipSize(0);
@@ -4094,7 +4109,7 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
           <span className="text-[10px] font-outfit uppercase tracking-widest text-emerald-600 font-extrabold block">Atelier Order Confirmed</span>
           <h2 className="font-playfair text-3xl font-extrabold text-[#500050] leading-none">Order Formally Recorded!</h2>
           <p className="text-xs text-[#73636f] max-w-sm mx-auto font-light leading-relaxed">
-            Your Coordinated style dossier is fully active. Use the buttons below to download, share, schedule, or track your custom fitting results at your convenience.
+            Your Coordinated style dossier is fully active. Use the options below to download or share your custom fitting results.
           </p>
         </div>
 
@@ -4185,87 +4200,8 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
           </div>
         </div>
 
-        {/* 3. Save to My Wardrobe Button */}
-        <div className="animate-fade-in">
-          <button
-            type="button"
-            disabled={wardrobeSavingState === "saving"}
-            onClick={handleSaveToWardrobe}
-            className={`w-full py-3.5 px-6 rounded-xl font-outfit text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer
-              ${wardrobeSavingState === "saved" || wardrobeSavingState === "exists"
-                ? "bg-pink-100 text-[#ac2471] border border-pink-200 cursor-not-allowed"
-                : "bg-purple-950 text-white hover:bg-purple-900 shadow-md transform hover:-translate-y-0.5"
-              }`}
-          >
-            {wardrobeSavingState === "saving" ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>Saving to Wardrobe...</span>
-              </>
-            ) : wardrobeSavingState === "saved" ? (
-              <>
-                <Check className="w-4 h-4 text-[#ac2471] stroke-[2.5]" />
-                <span>✓ Saved to My Wardrobe</span>
-              </>
-            ) : wardrobeSavingState === "exists" ? (
-              <>
-                <Check className="w-4 h-4 text-[#ac2471]" />
-                <span>✓ Already in Wardrobe</span>
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-4 h-4 text-pink-300 animate-pulse" />
-                <span>⭐ Save to My Wardrobe</span>
-              </>
-            )}
-          </button>
-        </div>
-
-        {/* 4. Add to Calendar Button */}
-        <div>
-          <button
-            type="button"
-            onClick={() => {
-              const deliveryDate = new Date();
-              deliveryDate.setDate(deliveryDate.getDate() + 5);
-              const yr = deliveryDate.getFullYear();
-              const mo = String(deliveryDate.getMonth() + 1).padStart(2, '0');
-              const dy = String(deliveryDate.getDate()).padStart(2, '0');
-              const startStr = `${yr}${mo}${dy}`;
-              
-              const deliveryEndDate = new Date(deliveryDate);
-              deliveryEndDate.setDate(deliveryEndDate.getDate() + 1);
-              const eYr = deliveryEndDate.getFullYear();
-              const eMo = String(deliveryEndDate.getMonth() + 1).padStart(2, '0');
-              const eDy = String(deliveryEndDate.getDate()).padStart(2, '0');
-              const endStr = `${eYr}${eMo}${eDy}`;
-              
-              const datesParam = `${startStr}/${endStr}`;
-              
-              const itemNames = [selectedOutfit.top, selectedOutfit.bottom, selectedOutfit.footwear, selectedOutfit.accessories]
-                .filter(Boolean)
-                .map((p) => p?.name || "Premium Item")
-                .join(", ");
-                
-              const title = `FitStyle AI Delivery - #FS-${orderId}`;
-              const desc = `Your FitStyle AI order arriving today!\nOrder: ${itemNames}\nTotal: $${totalAmount} USD\nTracking Reference: ${orderId}`;
-              
-              const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${datesParam}&details=${encodeURIComponent(desc)}`;
-              window.open(url, "_blank");
-              setCalendarAdded(true);
-            }}
-            className={`w-full py-3.5 px-6 rounded-xl font-outfit text-xs font-bold uppercase tracking-wider transition-all border flex items-center justify-center gap-2 cursor-pointer
-              ${calendarAdded 
-                ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
-                : "border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 shadow-sm"
-              }`}
-          >
-            <Calendar className="w-4 h-4 text-emerald-500" />
-            <span>{calendarAdded ? "✓ Added to Calendar" : "📅 Add Delivery to Calendar"}</span>
-          </button>
-        </div>
-
-        {/* 5. Share Your Look buttons */}
+        {false && <>
+        {/* Share Your Look buttons */}
         <div className="bg-white rounded-2xl border border-[#faeff5] p-6 text-left space-y-4 shadow-sm">
           <div className="flex items-center gap-2">
             <ShoppingBag className="w-5 h-5 text-[#ac2471]" />
@@ -4491,6 +4427,8 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
           )}
         </div>
 
+        </>}
+
         {/* 8. Download PDF + Coordinate Another Ensemble (existing buttons, polished matching layout) */}
         <div className="flex flex-col sm:flex-row justify-center gap-4 pt-4 shrink-0">
           <button
@@ -4522,11 +4460,50 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
 
   const renderStep2 = () => {
     const measurementCards = [
-      { label: "Shopper Height", value: heightCm, unit: "CM", icon: "height", setValue: setHeightCm, min: 120 },
+      { label: "Height", value: heightCm, unit: "CM", icon: "height", setValue: setHeightCm, min: 120 },
       { label: "Shoulders", value: shoulderSize, unit: "IN", icon: "straighten", setValue: setShoulderSize, min: 1 },
-      { label: "Natural Waist", value: waistSize, unit: "IN", icon: "accessibility_new", setValue: setWaistSize, min: 1 },
+      { label: "Waist", value: waistSize, unit: "IN", icon: "accessibility_new", setValue: setWaistSize, min: 1 },
       { label: "Hips", value: hipSize, unit: "IN", icon: "straighten", setValue: setHipSize, min: 1 }
     ];
+    const overlayImageSize = photoNaturalSize || { width: 1000, height: 1500 };
+    const detectedMeasurements = originalAiMeasurementsRef.current;
+    const measurementOverlayLines = [
+      {
+        label: "Shoulders",
+        value: shoulderSize,
+        unit: "in",
+        y: measurementLinePositions?.shoulder ?? 0.36,
+        baseline: detectedMeasurements.shoulderSize,
+        baseWidth: 0.38,
+        color: "#2563eb"
+      },
+      {
+        label: "Waist",
+        value: waistSize,
+        unit: "in",
+        y: measurementLinePositions?.waist ?? 0.54,
+        baseline: detectedMeasurements.waistSize,
+        baseWidth: 0.3,
+        color: "#ea580c"
+      },
+      {
+        label: "Hips",
+        value: hipSize,
+        unit: "in",
+        y: measurementLinePositions?.hip ?? 0.68,
+        baseline: detectedMeasurements.hipSize,
+        baseWidth: 0.42,
+        color: "#c026d3"
+      }
+    ].map((line) => {
+      const scale = line.baseline > 0 ? line.value / line.baseline : 1;
+      const width = overlayImageSize.width * line.baseWidth * Math.max(0.55, Math.min(1.45, scale));
+      return { ...line, y: line.y * overlayImageSize.height, width };
+    });
+    const detectedHeight = detectedMeasurements.heightCm > 0 ? detectedMeasurements.heightCm : 172;
+    const heightLineScale = Math.max(0.75, Math.min(1.25, (heightCm || detectedHeight) / detectedHeight));
+    const heightLineHalfLength = overlayImageSize.height * 0.43 * heightLineScale;
+    const overlayFontSize = Math.max(18, overlayImageSize.width * 0.045);
     const recommendedSize = validationResult?.suggested_size || sizeRecommendation.recommendedSize || "M";
     const saveAdjustments = async () => {
       const profileData = {
@@ -4585,11 +4562,80 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
 
               <div className="my-5 rounded-2xl border border-[#ECDDEC] bg-gradient-to-r from-[#FBF6FB] to-[#fff9fb] p-4 md:p-5"><div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-4"><div><span className="block text-[9px] font-extrabold uppercase tracking-[0.18em] text-[#831843]">Size</span><span className="font-playfair text-4xl font-bold text-[#5B085A]">{selectedSize}</span></div><div><span className="block text-[9px] font-extrabold uppercase tracking-wider text-[#831843]">Recommended Fitting Profile</span><span className="mt-1 block text-sm font-bold text-[#1A1528]">True-to-fit {selectedSize === "M" ? "Medium" : selectedSize}</span><span className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700"><CheckCircle2 className="h-3 w-3" /> AI Fit</span></div></div><div className="text-left sm:text-right"><span className="block text-[9px] font-extrabold uppercase tracking-wider text-slate-400">Silhouette Match</span><span className="mt-1 inline-flex items-center gap-1 text-sm font-bold text-[#1A1528]">{classifyDetails.shape}<CheckCircle2 className="h-4 w-4 text-emerald-500" /></span><button type="button" onClick={() => setIsPoseMode(true)} className="mt-2 flex items-center gap-1 text-[10px] font-bold text-[#5B085A] sm:ml-auto"><Pencil className="h-3 w-3" /> Customize Profile</button></div></div><div className="mt-4 flex flex-wrap gap-1.5">{["XS", "S", "M", "L", "XL"].map((size) => <button key={size} type="button" onClick={() => setSelectedSize(size)} className={`min-w-9 rounded-lg border px-2.5 py-1.5 text-[10px] font-extrabold ${selectedSize === size ? "border-[#5B085A] bg-[#5B085A] text-white" : "border-[#ECDDEC] bg-white text-slate-600 hover:border-[#5B085A]"}`}>{size}</button>)}<span className="ml-auto self-center text-[10px] text-slate-400">AI suggests {recommendedSize}</span></div></div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{measurementCards.map((measurement) => <div key={measurement.label} className="rounded-2xl border border-[#ECDDEC] bg-white p-4"><div className="flex items-center justify-between"><span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500"><span className="material-symbols-outlined text-base text-[#831843]">{measurement.icon}</span>{measurement.label}</span><Edit3 className="h-3.5 w-3.5 text-slate-300" /></div><div className="mt-3 flex items-end justify-between gap-2"><label className="flex items-baseline gap-1"><input aria-label={measurement.label} type="number" min={measurement.min} value={measurement.value || ""} onChange={(event) => measurement.setValue(Number(event.target.value))} className="w-24 bg-transparent font-playfair text-3xl font-bold text-[#1A1528] outline-none" /><span className="text-[10px] font-bold uppercase text-slate-400">{measurement.unit}</span></label><div className="flex gap-1"><button type="button" aria-label={`Decrease ${measurement.label}`} onClick={() => measurement.setValue(Math.max(measurement.min, measurement.value - 1))} className="rounded-lg border border-[#ECDDEC] p-1.5 text-[#5B085A] hover:bg-[#FBF6FB]"><Minus className="h-3.5 w-3.5" /></button><button type="button" aria-label={`Increase ${measurement.label}`} onClick={() => measurement.setValue(measurement.value + 1)} className="rounded-lg border border-[#ECDDEC] p-1.5 text-[#5B085A] hover:bg-[#FBF6FB]"><Plus className="h-3.5 w-3.5" /></button></div></div></div>)}</div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{measurementCards.map((measurement) => <div key={measurement.label} className="rounded-2xl border border-[#ECDDEC] bg-white p-4"><div className="flex items-center justify-between"><span className="flex items-center gap-1.5 text-xl font-bold uppercase tracking-wider text-red-700">{measurement.label}</span><Edit3 className="h-3.5 w-3.5 text-slate-300" /></div><div className="mt-3 flex items-end justify-between gap-2"><label className="flex items-baseline gap-1"><input aria-label={measurement.label} type="number" min={measurement.min} value={measurement.value || ""} onChange={(event) => measurement.setValue(Number(event.target.value))} className="w-24 bg-transparent font-playfair text-[25px] font-bold text-[#1A1528] outline-none" /><span className="text-xl font-bold uppercase text-slate-400">{measurement.unit}</span></label><div className="flex gap-1"><button type="button" aria-label={`Decrease ${measurement.label}`} onClick={() => measurement.setValue(Math.max(measurement.min, measurement.value - 1))} className="rounded-lg border border-[#ECDDEC] p-1.5 text-[#5B085A] hover:bg-[#FBF6FB]"><Minus className="h-3.5 w-3.5" /></button><button type="button" aria-label={`Increase ${measurement.label}`} onClick={() => measurement.setValue(measurement.value + 1)} className="rounded-lg border border-[#ECDDEC] p-1.5 text-[#5B085A] hover:bg-[#FBF6FB]"><Plus className="h-3.5 w-3.5" /></button></div></div></div>)}</div>
 
             </section>
 
-            <section className="lg:col-span-5 space-y-4"><div className="rounded-3xl border border-[#ECDDEC] bg-white p-4 shadow-[0_12px_30px_rgba(91,8,90,0.05)] md:p-5"><div className="flex items-center justify-between"><span className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.16em] text-[#5B085A]"><span className="h-2 w-2 rounded-full bg-[#5B085A]" /> Shopper Photo</span><span className="font-mono text-[9px] text-slate-400">ID: FA-99283-WL</span></div><div className="relative mt-4 aspect-[2/3] overflow-hidden rounded-2xl border border-[#ECDDEC] bg-[#f8f5f8]">{selectedPhoto ? <img src={annotatedImage || selectedPhoto} alt={annotatedImage ? "Photo with FitVerse measurement overlay" : "Uploaded shopper full body"} className="h-full w-full object-contain" /> : <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-slate-400"><Upload className="h-8 w-8 text-[#ac2471]" /><span className="text-xs font-bold">Upload a full-body photo in Step 1</span></div>}<span className="absolute left-3 top-3 rounded-full border border-white/70 bg-white/90 px-2.5 py-1 text-[9px] font-bold text-[#1A1528] shadow-sm">Full-Body Detected</span><span className="absolute right-3 top-3 rounded-full border border-white/70 bg-white/90 px-2.5 py-1 text-[9px] font-bold text-[#1A1528] shadow-sm">{Math.round(poseConfidence)}% Scale</span>{poseLoading && <div className="absolute inset-0 flex items-center justify-center bg-white/75"><RefreshCw className="h-6 w-6 animate-spin text-[#5B085A]" /></div>}</div><p className="mt-3 flex items-center gap-1.5 text-xs font-bold text-emerald-700"><CheckCircle2 className="h-4 w-4" /> Photo analyzed successfully</p><div className="mt-2 flex items-center justify-between border-t border-[#f1e8f2] pt-2 text-[10px] text-slate-500"><span>AI sizing calibration complete</span><span>Pose: Standing Neutral</span></div></div><div className="flex items-center justify-between rounded-2xl border border-[#ECDDEC] bg-white px-4 py-3 text-[10px] text-slate-500 shadow-sm"><span>Need a different posture or lighting?</span><label className="inline-flex cursor-pointer items-center gap-1.5 font-extrabold uppercase tracking-wider text-[#5B085A] hover:text-[#470646]"><Upload className="h-3.5 w-3.5" /> Re-upload<input type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} /></label></div></section>
+            <section className="lg:col-span-5 space-y-4">
+              <div className="rounded-3xl border border-[#ECDDEC] bg-white p-4 shadow-[0_12px_30px_rgba(91,8,90,0.05)] md:p-5">
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.16em] text-[#5B085A]"><span className="h-2 w-2 rounded-full bg-[#5B085A]" /> Shopper Photo</span>
+                  <span className="font-mono text-[9px] text-slate-400">ID: FA-99283-WL</span>
+                </div>
+                <div className="relative mt-4 aspect-[2/3] overflow-hidden rounded-2xl border border-[#ECDDEC] bg-[#f8f5f8]">
+                  {selectedPhoto ? (
+                    <>
+                      <img
+                        src={selectedPhoto}
+                        alt="Uploaded shopper full body with editable measurement lines"
+                        onLoad={(event) => setPhotoNaturalSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
+                        className="h-full w-full object-contain"
+                      />
+                      {photoNaturalSize && !poseLoading && heightCm > 0 && shoulderSize > 0 && waistSize > 0 && hipSize > 0 && (
+                        <svg
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-0 h-full w-full"
+                          viewBox={`0 0 ${photoNaturalSize.width} ${photoNaturalSize.height}`}
+                          preserveAspectRatio="xMidYMid meet"
+                        >
+                          {measurementOverlayLines.map((line) => {
+                            const centerX = photoNaturalSize.width / 2;
+                            const x1 = centerX - line.width / 2;
+                            const x2 = centerX + line.width / 2;
+                            const label = `${line.label}: ${line.value} ${line.unit}`;
+                            const labelTop = Math.max(2, line.y - overlayFontSize * 1.55);
+                            const labelX = photoNaturalSize.width * 0.06 + overlayFontSize * 0.35;
+                            const labelTextX = photoNaturalSize.width * 0.06 + overlayFontSize * 0.65;
+                            const labelWidth = Math.min(photoNaturalSize.width * 0.68, photoNaturalSize.width * 0.96 - labelX, label.length * overlayFontSize * 0.58 + overlayFontSize);
+                            return (
+                              <g key={line.label}>
+                                <line x1={x1} y1={line.y} x2={x2} y2={line.y} stroke={line.color} strokeWidth={Math.max(2, photoNaturalSize.width * 0.004)} />
+                                <rect x={labelX} y={labelTop} width={labelWidth} height={overlayFontSize * 1.4} rx={overlayFontSize * 0.2} fill="rgba(255,255,255,0.88)" />
+                                <text x={labelTextX} y={labelTop + overlayFontSize} fill={line.color} fontSize={overlayFontSize} fontWeight="700">{label}</text>
+                              </g>
+                            );
+                          })}
+                          {(() => {
+                            const centerY = photoNaturalSize.height / 2;
+                            const x = photoNaturalSize.width * 0.06;
+                            const y1 = centerY - heightLineHalfLength;
+                            const y2 = centerY + heightLineHalfLength;
+                            const label = `Height: ${heightCm} cm`;
+                            const labelTop = Math.min(photoNaturalSize.height - overlayFontSize * 1.5, y1 + overlayFontSize * 0.25);
+                            const labelWidth = Math.min(photoNaturalSize.width * 0.55, label.length * overlayFontSize * 0.58 + overlayFontSize);
+                            return (
+                              <g>
+                                <line x1={x} y1={y1} x2={x} y2={y2} stroke="#b91c1c" strokeWidth={Math.max(2, photoNaturalSize.width * 0.004)} />
+                                <rect x={x + overlayFontSize * 0.35} y={labelTop} width={labelWidth} height={overlayFontSize * 1.4} rx={overlayFontSize * 0.2} fill="rgba(255,255,255,0.88)" />
+                                <text x={x + overlayFontSize * 0.65} y={labelTop + overlayFontSize} fill="#b91c1c" fontSize={overlayFontSize} fontWeight="700">{label}</text>
+                              </g>
+                            );
+                          })()}
+                        </svg>
+                      )}
+                    </>
+                  ) : (
+                    <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-slate-400"><Upload className="h-8 w-8 text-[#ac2471]" /><span className="text-xs font-bold">Upload a full-body photo in Step 1</span></div>
+                  )}
+                  <span className="absolute left-3 top-3 rounded-full border border-white/70 bg-white/90 px-2.5 py-1 text-[9px] font-bold text-[#1A1528] shadow-sm">Full-Body Detected</span>
+                  <span className="absolute right-3 top-3 rounded-full border border-white/70 bg-white/90 px-2.5 py-1 text-[9px] font-bold text-[#1A1528] shadow-sm">{Math.round(poseConfidence)}% Scale</span>
+                  {poseLoading && <div className="absolute inset-0 flex items-center justify-center bg-white/75"><RefreshCw className="h-6 w-6 animate-spin text-[#5B085A]" /></div>}
+                </div>
+                <p className="mt-3 flex items-center gap-1.5 text-xs font-bold text-emerald-700"><CheckCircle2 className="h-4 w-4" /> Photo analyzed successfully</p>
+                <div className="mt-2 flex items-center justify-between border-t border-[#f1e8f2] pt-2 text-[10px] text-slate-500"><span>AI sizing calibration complete</span><span>Pose: Standing Neutral</span></div>
+              </div>
+              <div className="flex items-center justify-between rounded-2xl border border-[#ECDDEC] bg-white px-4 py-3 text-[10px] text-slate-500 shadow-sm"><span>Need a different posture or lighting?</span><label className="inline-flex cursor-pointer items-center gap-1.5 font-extrabold uppercase tracking-wider text-[#5B085A] hover:text-[#470646]"><Upload className="h-3.5 w-3.5" /> Re-upload<input type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} /></label></div>
+            </section>
           </div>
 
           <div className="mt-5 flex flex-col-reverse items-center justify-between gap-4 sm:flex-row"><button type="button" onClick={() => setCurrentStep(1)} className="inline-flex items-center gap-2 rounded-xl border border-[#ECDDEC] bg-white px-4 py-2.5 text-[10px] font-extrabold uppercase tracking-wider text-[#5B085A] hover:bg-[#FBF6FB]"><ArrowLeft className="h-3.5 w-3.5" /> Back to Theme Selection</button><div className="text-center sm:text-right"><button type="button" onClick={() => setCurrentStep(3)} className="inline-flex items-center gap-2 rounded-full bg-[#5B085A] px-6 py-3 text-[11px] font-extrabold uppercase tracking-[0.12em] text-white shadow-md hover:bg-[#470646] active:scale-[0.98]">Next: Try-On <ArrowRight className="h-4 w-4" /></button><p className="mt-1.5 text-[10px] text-slate-500">Confirm your measurements to continue to virtual try-on.</p></div></div>
