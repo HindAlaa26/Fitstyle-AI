@@ -1276,7 +1276,15 @@ VALIDATION BEFORE RETURNING:
           usedFitVerse = true;
           console.log("[INFO] FitVerse measurement succeeded.");
         } else {
-          console.log("[INFO] FitVerse service returned an error status, falling back to Qwen.");
+          const fitVerseError = await fitVerseRes.json().catch(() => ({}));
+          if (fitVerseRes.status === 422) {
+            const detectorReason = typeof fitVerseError.error === "string" ? fitVerseError.error : "No full person was detected.";
+            return res.status(422).json({
+              error: "unusable_photo",
+              message: `The size model could not detect a full person in this image (${detectorReason}). Upload a clear, well-lit, full-body photo with the head and feet visible.`,
+            });
+          }
+          console.log(`[INFO] FitVerse service returned status ${fitVerseRes.status}, falling back to Qwen:`, fitVerseError.error || fitVerseError.detail || "unknown error");
         }
       } catch (fitVerseErr: any) {
         console.log("[INFO] FitVerse service unreachable (is body_measurement_service.py running?), falling back to Qwen:", fitVerseErr.message);
