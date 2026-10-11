@@ -144,7 +144,8 @@ function drawMapCard(doc: jsPDF, x: number, y: number, w: number, h: number) {
 
 export async function downloadOrderPdf(order: PlacedOrder): Promise<void> {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-  doc.setProperties({ title: `FitStyle AI Order ${order.orderId}` });
+  const summaryOnly = /not purchased|summary/i.test(order.status || "");
+  doc.setProperties({ title: `FitStyle AI ${summaryOnly ? "Style Summary" : "Order"} ${order.orderId}` });
 
   const PW = 210;
   const ML = 14;
@@ -275,7 +276,9 @@ export async function downloadOrderPdf(order: PlacedOrder): Promise<void> {
   doc.text(
     pending
       ? "Show this document or the QR code at the store counter to complete your payment and pick up your order."
-      : "Thank you for your order. Show the QR code at the store to pick up your pieces.",
+      : summaryOnly
+        ? "This is a style summary, not a placed order. Use the item details and QR code as a reference."
+        : "Thank you for your order. Show the QR code at the store to pick up your pieces.",
     PW / 2,
     rowY + rowH + 7,
     { align: "center" }
@@ -384,8 +387,8 @@ export async function downloadOrderPdf(order: PlacedOrder): Promise<void> {
   doc.setFont("helvetica", "bold");
   doc.setTextColor(...C.text);
   doc.text(usd(order.subtotal), PW - ML, y + 3, { align: "right" });
-  doc.setTextColor(...(pending ? C.secondary : C.text));
-  doc.text(pending ? "Due at the store" : "Paid", PW - ML, y + 9, { align: "right" });
+  doc.setTextColor(...(pending || summaryOnly ? C.secondary : C.text));
+  doc.text(pending ? "Due at the store" : summaryOnly ? "Not purchased" : "Paid", PW - ML, y + 9, { align: "right" });
 
   doc.setFillColor(...C.primary);
   doc.roundedRect(bx, y + 14, 86, 13, 2, 2, "F");
@@ -443,5 +446,5 @@ export async function downloadOrderPdf(order: PlacedOrder): Promise<void> {
     );
   }
 
-  doc.save(`FitStyle_Order_${order.orderId}.pdf`);
+  doc.save(`FitStyle_${summaryOnly ? "Style_Summary" : "Order"}_${order.orderId}.pdf`);
 }
