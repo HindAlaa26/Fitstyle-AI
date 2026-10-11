@@ -1029,7 +1029,7 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
         ...prev,
         cardholderName: displayName,
         cardNumber: "4821  8291  4731  9482",
-        expiryDate: "12/29",
+        expiryDate: "2029-12",
         cvv: "888"
       }));
 
@@ -1066,7 +1066,7 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
       ...prev,
       cardholderName: derivedName,
       cardNumber: "4821  8291  4731  9482",
-      expiryDate: "12/29",
+      expiryDate: "2029-12",
       cvv: "888"
     }));
 
@@ -3658,7 +3658,11 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
                     </div>
                     <div className="text-right">
                       <span className="text-[7.5px] block uppercase text-[#fae1f0] mb-0.5">Expires</span>
-                      <span className="font-bold">{paymentForm.expiryDate || "12/29"}</span>
+                      <span className="font-bold">
+                        {paymentForm.expiryDate
+                          ? paymentForm.expiryDate.replace(/^(\d{4})-(\d{2})$/, "$2/$1")
+                          : "MM/YYYY"}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -3681,11 +3685,10 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
 
                   <div className="grid grid-cols-2 gap-2">
                      <div>
-                       <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Expiry</label>
+                       <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Expiry Date</label>
                        <input
-                         type="text"
-                         placeholder="MM/YY"
-                         maxLength={5}
+                         type="month"
+                         min={new Date().toISOString().slice(0, 7)}
                          value={paymentForm.expiryDate}
                          onChange={(e) => setPaymentForm({ ...paymentForm, expiryDate: e.target.value })}
                          className="w-full bg-[#faeff5]/30 border border-[#f3e9f0] p-2.5 rounded-xl text-xs text-center font-mono focus:outline-none focus:ring-1 focus:ring-[#ac2471]"
@@ -3736,8 +3739,14 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
                     setPaymentError("Kindly state a 16-digit testing card number.");
                     return;
                   }
-                  if (!paymentForm.expiryDate || paymentForm.expiryDate.length < 5) {
-                    setPaymentError("Please input card expiration date in MM/YY format.");
+                  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(paymentForm.expiryDate)) {
+                    setPaymentError("Please select a valid card expiration month and year.");
+                    return;
+                  }
+                  const [expiryYear, expiryMonth] = paymentForm.expiryDate.split("-").map(Number);
+                  const currentDate = new Date();
+                  if (expiryYear < currentDate.getFullYear() || (expiryYear === currentDate.getFullYear() && expiryMonth < currentDate.getMonth() + 1)) {
+                    setPaymentError("The card expiration date must be this month or later.");
                     return;
                   }
                   if (!paymentForm.cvv || paymentForm.cvv.length < 3) {
