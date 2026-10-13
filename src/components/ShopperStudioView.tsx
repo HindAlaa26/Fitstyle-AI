@@ -19,6 +19,8 @@ import {
   toCatalogSize,
   fetchExplanation,
 } from "../utils/recommendationsApi";
+import { prepareUserPhoto, runVton, VtonError } from "../utils/vtonApi";
+
 
 // Asynchronous helper to create a high-quality rounded clipping base64 image or a category emoji placeholder
 const getRoundedProductImage = async (url: string | undefined, emoji: string): Promise<string> => {
@@ -2077,7 +2079,7 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
     setTryOnRenderKey((key) => key + 1);
   };
 
-  const triggerTryOn = async (topImage?: string, _garmentDescription?: string) => {
+const triggerTryOn = async (topImage?: string, _garmentDescription?: string, topProductId?: string) => {
     setProductOverlayUrl(null);
 
     const userPhoto = selectedPhoto;
@@ -2096,6 +2098,30 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
     setTryOnRenderKey((key) => key + 1);
 
     try {
+      const catalogIds = topProductId
+        ? [topProductId, selectedOutfit.bottom?.id].filter((x): x is string => !!x && !x.startsWith("groq-"))
+        : [selectedOutfit.top, selectedOutfit.bottom]
+            .filter((p): p is NonNullable<typeof p> => !!p && !!p.id && !String(p.id).startsWith("groq-"))
+            .map((p) => p.id);
+      const isCatalogTop = !!topProductId || !topImage || topImage === selectedOutfit.top?.image;
+
+      if (isCatalogTop && catalogIds.length > 0) {
+        try {
+          const photo = await prepareUserPhoto(userPhoto);
+          const ladi = await runVton(photo, catalogIds);
+          setTryOnUrl(ladi.tryOnUrl);
+          setTryOnOverlaid(true);
+          setFashnStatus("success");
+          setTryOnRenderKey((key) => key + 1);
+          return;
+        } catch (e: any) {
+          // نرجع للتلبيس القديم (Kolors) بس لو الخدمة الجديدة مش متاحة أصلًا
+          const serviceDown = !(e instanceof VtonError) || e.code === "try_on_unavailable";
+          if (!serviceDown) throw e;
+          console.warn("[VTON] unavailable, falling back to Kolors:", e?.message);
+        }
+      }
+
       const response = await fetch("/api/try-on", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -2123,13 +2149,18 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
 
     } catch (err: any) {
       setFashnStatus("error");
-      setFashnErrorText(err.message || "Try-on failed. Please retry.");
+      const message =
+        err?.code === "timeout"
+          ? "Virtual try-on timed out. The rendering service may still be busy — please retry in a moment."
+          : err?.message || "Try-on failed. Please retry.";
+      setFashnErrorText(message);
       setTryOnOverlaid(false);
       setTryOnUrl(null);
     } finally {
       setTrialLoading(false);
     }
   };
+
 
   const retryTryOn = () => {
     setForceFashnFailure(false);
@@ -2354,7 +2385,7 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
 
     setTryOnOverlaid(false);
     setTryOnUrl(null);
-    await triggerTryOn(product.image, product.name);
+    await triggerTryOn(product.image, product.name, product.id);
   };
 
   // Calibration Draggable handlers
@@ -3413,6 +3444,11 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
       setLookGenerating(true);
       window.setTimeout(() => setLookGenerating(false), 1400);
     };
+    const runStep3TryOn = () => {
+      const top = selectedOutfit.top;
+      if (!top) return;
+      void triggerTryOn(top.image, top.name, top.id);
+    };
     const handleAddSelectedToCart = () => {
       if (selectedItems.length === 0 || !onAddToCart) return;
       onAddToCart(selectedItems, recoActive ? toCatalogSize(selectedSize) : selectedSize);
@@ -3456,10 +3492,10 @@ export default function ShopperStudioView({ products, currentUser, onLogout, onD
                 <div><div className="mb-2 flex items-center justify-between text-[9px] font-extrabold uppercase tracking-wider text-slate-400"><span>Dresses</span><span>12 items</span></div><div className="space-y-2">{collectionItems.filter((item) => item.category === "top").slice(0, 3).map((item) => <button type="button" key={item.id} onClick={() => setSelectedOutfit((previous) => ({ ...previous, top: item }))} className={`flex w-full gap-3 rounded-xl border p-2 text-left transition ${selectedOutfit.top?.id === item.id ? "border-[#5a005a] bg-[#fbf5fa] ring-1 ring-[#5a005a]/10" : "border-[#f1e8f2] hover:border-[#d9b9d9]"}`}><img src={item.image} alt={item.name} className="h-16 w-12 rounded-lg object-cover" /><span className="min-w-0 flex-1"><strong className="block truncate text-[11px] text-[#1d1327]">{item.name}</strong><span className="mt-1 block text-[10px] text-slate-500">${item.price}</span><span className="mt-1 block text-[8px] font-bold uppercase tracking-wider text-[#ac2471]">{selectedOutfit.top?.id === item.id ? "AI Choice" : item.size}</span></span></button>)}</div></div>
                 <div><div className="mb-2 flex items-center justify-between text-[9px] font-extrabold uppercase tracking-wider text-slate-400"><span>Tops</span><span>24 items</span></div><div className="space-y-2">{collectionItems.filter((item) => item.category === "top").slice(3, 5).map((item) => <button type="button" key={item.id} onClick={() => setSelectedOutfit((previous) => ({ ...previous, top: item }))} className="flex w-full gap-3 rounded-xl border border-[#f1e8f2] p-2 text-left transition hover:border-[#d9b9d9]"><img src={item.image} alt={item.name} className="h-16 w-12 rounded-lg object-cover" /><span className="min-w-0 flex-1"><strong className="block truncate text-[11px] text-[#1d1327]">{item.name}</strong><span className="mt-1 block text-[10px] text-slate-500">${item.price}</span><span className="mt-1 block text-[8px] text-slate-400">{item.size}</span></span></button>)}</div></div>
               </div>
-              <button type="button" onClick={generateLook} disabled={lookGenerating} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#580a58] px-4 py-3 text-[10px] font-extrabold uppercase tracking-wider text-white shadow-sm transition hover:bg-[#450645] disabled:cursor-wait disabled:opacity-70">{lookGenerating ? <><RefreshCw className="h-3.5 w-3.5 animate-spin" /> Rendering Look...</> : <><Sparkles className="h-3.5 w-3.5" /> Generate Look</>}</button>
+              <button type="button" onClick={runStep3TryOn} disabled={trialLoading || !selectedOutfit.top || !selectedPhoto} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#580a58] px-4 py-3 text-[10px] font-extrabold uppercase tracking-wider text-white shadow-sm transition hover:bg-[#450645] disabled:cursor-not-allowed disabled:opacity-70">{trialLoading ? <><RefreshCw className="h-3.5 w-3.5 animate-spin" /> Rendering Look...</> : <><Sparkles className="h-3.5 w-3.5" /> Generate Look</>}</button>
             </section>
 
-            <section className="rounded-3xl border border-[#ecddec] bg-white p-4 shadow-sm md:p-5"><div className="relative overflow-hidden rounded-2xl bg-[#e9e2e9] shadow-inner"><div className="aspect-[4/5] min-h-[520px] md:min-h-[620px]">{previewImage ? <img src={previewImage} alt="Virtual try-on preview" className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-center text-xs text-slate-500">Upload a photo in Step 1 to preview your look.</div>}</div><div className="absolute left-4 top-4 inline-flex items-center gap-2 rounded-full border border-white/50 bg-white/85 px-3 py-1.5 text-[9px] font-bold text-[#1d1327] shadow-sm backdrop-blur"><span className="h-2 w-2 rounded-full bg-emerald-500" /> Virtual Fitting Active</div><span className="absolute bottom-4 right-4 rounded-md bg-black/60 px-2.5 py-1.5 text-[8px] font-bold tracking-[0.16em] text-white">RENDER: 4K PHOTONIC</span><div className="pointer-events-none absolute left-1/2 top-1/2 h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/70"><span className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white" /></div></div>{recoActive && <OutfitWhyCard explanation={recoExplanation || recoOutfits[recoIndex]?.explanation || null} loading={recoExplLoading} customised={recoCustomised} />}<p className="mt-4 text-center font-playfair text-xl italic text-[#580a58]">Effortless <span className="not-italic text-[#d2a5c9]">•</span> Intelligent <span className="not-italic text-[#d2a5c9]">•</span> Serene</p></section>
+            <section className="rounded-3xl border border-[#ecddec] bg-white p-4 shadow-sm md:p-5"><div className="relative overflow-hidden rounded-2xl bg-[#e9e2e9] shadow-inner"><div className="aspect-[4/5] min-h-[520px] md:min-h-[620px]">{previewImage ? <img src={previewImage} alt="Virtual try-on preview" className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-center text-xs text-slate-500">Upload a photo in Step 1 to preview your look.</div>}</div>{trialLoading && <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/50 text-center text-xs font-bold text-white">Generating try-on... (may take a few minutes)</div>}{fashnErrorText && <div className="absolute bottom-16 left-4 right-4 z-20 rounded-lg bg-red-600/90 p-2 text-[10px] text-white">{fashnErrorText}</div>}<div className="absolute left-4 top-4 inline-flex items-center gap-2 rounded-full border border-white/50 bg-white/85 px-3 py-1.5 text-[9px] font-bold text-[#1d1327] shadow-sm backdrop-blur"><span className="h-2 w-2 rounded-full bg-emerald-500" /> {tryOnUrl ? "Virtual Fitting Active" : "Preview"}</div><span className="absolute bottom-4 right-4 rounded-md bg-black/60 px-2.5 py-1.5 text-[8px] font-bold tracking-[0.16em] text-white">RENDER: 4K PHOTONIC</span><div className="pointer-events-none absolute left-1/2 top-1/2 h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/70"><span className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white" /></div></div>{recoActive && <OutfitWhyCard explanation={recoExplanation || recoOutfits[recoIndex]?.explanation || null} loading={recoExplLoading} customised={recoCustomised} />}<p className="mt-4 text-center font-playfair text-xl italic text-[#580a58]">Effortless <span className="not-italic text-[#d2a5c9]">•</span> Intelligent <span className="not-italic text-[#d2a5c9]">•</span> Serene</p></section>
 
             <section className="flex flex-col rounded-3xl border border-[#ecddec] bg-white p-5 shadow-sm md:p-6"><div className="border-b border-[#f1e8f2] pb-4"><h3 className="font-playfair text-2xl font-bold text-[#1d1327]">Your Selection</h3><p className="mt-2 text-[10px] font-extrabold uppercase tracking-wider text-[#ac2471]">✦ AI Style Harmony: 98%</p></div><div className="mt-2 flex-1 divide-y divide-[#f1e8f2]">{selectedItems.length === 0 ? <p className="py-8 text-center text-xs text-slate-400">No pieces selected yet.</p> : selectedItems.map((item) => <div key={item.id} className="flex items-center gap-3 py-4"><img src={item.image} alt={item.name} className="h-14 w-12 rounded-lg object-cover" /><div className="min-w-0 flex-1"><p className="truncate text-[11px] font-bold text-[#1d1327]">{item.name}</p><p className="mt-1 text-[10px] text-slate-500">Size: {item.size}</p><p className="mt-1 font-serif text-sm font-bold text-[#580a58]">${item.price.toFixed(2)}</p></div><button type="button" aria-label={`Remove ${item.name}`} onClick={() => removeItem(item.id)} className="rounded-full p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"><span className="text-lg leading-none">×</span></button></div>)}</div><div className="mt-4 border-t border-[#f1e8f2] pt-4 text-xs text-slate-500"><div className="flex justify-between"><span>Items ({selectedItems.length})</span><span>${selectedTotal.toFixed(2)}</span></div><div className="mt-2 flex justify-between"><span>AI Styling Fee</span><span className="font-bold text-emerald-600">FREE</span></div><div className="my-4 border-t border-[#f1e8f2]" /><div className="flex items-end justify-between"><span className="font-bold uppercase tracking-wider text-[#1d1327]">Total</span><span className="font-playfair text-2xl font-bold text-[#580a58]">${selectedTotal.toFixed(2)}</span></div><button type="button" onClick={() => setCurrentStep(4)} disabled={selectedItems.length === 0} className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-[#5a005a] px-4 py-3.5 text-[10px] font-extrabold uppercase tracking-wider text-white shadow-sm transition hover:bg-[#470646] disabled:cursor-not-allowed disabled:opacity-40">Continue to Create Order <ArrowRight className="h-4 w-4" /></button><button type="button" onClick={handleAddSelectedToCart} disabled={selectedItems.length === 0 || !onAddToCart} className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-[#5a005a] bg-white px-4 py-3.5 text-[10px] font-extrabold uppercase tracking-wider text-[#5a005a] transition hover:bg-[#fbf5fa] disabled:cursor-not-allowed disabled:opacity-40">{cartAddFeedback ? <><CheckCircle2 className="h-4 w-4" /> Added to Cart</> : <><ShoppingBag className="h-4 w-4" /> Add to Cart</>}</button></div></section>
           </div>
