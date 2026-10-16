@@ -22,6 +22,7 @@ import {
   buildAlternatives,
   explainOutfit,
 } from "./recommendationService";
+import { registerTryOnRoutes } from "./tryonService";
 
 // Initialize Express
 const app = express();
@@ -1956,11 +1957,11 @@ At a height of ${heightCm || "172"}cm with a Size ${size || "Medium"}, your prop
 
   res.json({ advice: mockAdvice });
 });
-
 // ----------------------------------------------------
 // VITE OR STATIC FILE SERVING
 // ----------------------------------------------------
 async function startViteServer() {
+  registerTryOnRoutes(app, { getProducts: () => dbProducts, requireUser });
   if (process.env.NODE_ENV !== "production") {
     console.log("Launching in development mode with Vite middleware...");
     const vite = await createViteServer({
