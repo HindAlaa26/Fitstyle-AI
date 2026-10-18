@@ -46,6 +46,53 @@ export function prepareUserPhoto(src: string, maxSide = 1280): Promise<string> {
   });
 }
 
+export async function preserveLowerBody(
+  bottomImageUrl: string,
+  topImageUrl: string,
+  fadeStartPercent: number,
+  fadeEndPercent: number,
+): Promise<string> {
+  const loadImage = (src: string) => new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("could not load try-on result"));
+    image.src = src;
+  });
+  const [bottomImage, topImage] = await Promise.all([
+    loadImage(bottomImageUrl),
+    loadImage(topImageUrl),
+  ]);
+  const width = bottomImage.naturalWidth || bottomImage.width;
+  const height = bottomImage.naturalHeight || bottomImage.height;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("canvas not available");
+
+  ctx.drawImage(bottomImage, 0, 0, width, height);
+  const topLayer = document.createElement("canvas");
+  topLayer.width = width;
+  topLayer.height = height;
+  const topCtx = topLayer.getContext("2d");
+  if (!topCtx) throw new Error("canvas not available");
+  topCtx.drawImage(topImage, 0, 0, width, height);
+
+  const start = Math.max(0, Math.min(99, fadeStartPercent));
+  const end = Math.max(start + 1, Math.min(100, fadeEndPercent));
+  const mask = topCtx.createLinearGradient(0, 0, 0, height);
+  mask.addColorStop(0, "rgba(0, 0, 0, 1)");
+  mask.addColorStop(start / 100, "rgba(0, 0, 0, 1)");
+  mask.addColorStop(end / 100, "rgba(0, 0, 0, 0)");
+  mask.addColorStop(1, "rgba(0, 0, 0, 0)");
+  topCtx.globalCompositeOperation = "destination-in";
+  topCtx.fillStyle = mask;
+  topCtx.fillRect(0, 0, width, height);
+  ctx.drawImage(topLayer, 0, 0);
+
+  return canvas.toDataURL("image/png");
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**

@@ -51,8 +51,9 @@ const KEEP_JOBS_MS = 2 * 60 * 60 * 1000;
 interface JobInfo { userId: string; createdAt: number; finished: boolean }
 const jobs = new Map<string, JobInfo>();
 
-const base = () => (process.env.TRYON_URL || "").replace(/\/$/, "");
-const authHeaders = () => ({ "X-API-Key": process.env.TRYON_API_KEY || "" });
+const base = () => (process.env.TRYON_URL || process.env.PUBLIC_URL || "").replace(/\/$/, "");
+const apiKey = () => process.env.TRYON_API_KEY || process.env.API_KEY || "";
+const authHeaders = () => ({ "X-API-Key": apiKey() });
 
 function absoluteUrl(src: string): string | null {
   if (/^https?:\/\//i.test(src)) return src;
@@ -72,7 +73,7 @@ function parsePhoto(dataUrl: unknown): { buf: Buffer; mime: string } | null {
 
 export function registerTryOnRoutes(app: Express, { getProducts, requireUser }: Deps): void {
   app.post("/api/vton", requireUser, async (req: any, res: Response) => {
-    if (!base() || !process.env.TRYON_API_KEY) {
+    if (!base() || !apiKey()) {
       return res.status(503).json({ error: "try_on_unavailable", message: "Virtual try-on service is not configured." });
     }
     const userId: string = req.authUserId;
@@ -87,7 +88,6 @@ export function registerTryOnRoutes(app: Express, { getProducts, requireUser }: 
       return res.status(400).json({ error: "bad_products", message: "productIds must be an array of 1-6 product ids." });
     }
 
-    // نظّفي الـ jobs القديمة، وامنعي أكتر من job شغال لنفس اليوزر
     const now = Date.now();
     for (const [id, j] of jobs) if (now - j.createdAt > KEEP_JOBS_MS) jobs.delete(id);
     for (const j of jobs.values()) {
@@ -125,8 +125,13 @@ export function registerTryOnRoutes(app: Express, { getProducts, requireUser }: 
       const body: any = await r.json().catch(() => ({}));
       if (!r.ok) {
         console.error("[VTON] service rejected request:", r.status, body);
+        const detail = body.detail || body.message ||
+          (r.status === 530
+            ? "Cloudflare could not reach the Colab try-on server (HTTP 530). Restart the Colab service and update PUBLIC_URL if its tunnel URL changed."
+            : `Try-on service returned HTTP ${r.status}.`);
         return res.status(r.status === 400 ? 400 : 502).json({
-          error: "try_on_failed", message: r.status === 400 ? String(body.detail || "Invalid request") : "Try-on service error.",
+          error: "try_on_failed",
+          message: String(detail).slice(0, 500),
         });
       }
       jobs.set(body.job_id, { userId, createdAt: now, finished: false });
@@ -146,7 +151,7 @@ export function registerTryOnRoutes(app: Express, { getProducts, requireUser }: 
       const r = await fetch(`${base()}/jobs/${encodeURIComponent(id)}`, {
         headers: authHeaders(), signal: AbortSignal.timeout(15000),
       });
-      if (r.status === 404) {                      // السيرفيس اتعمله restart فالـ job ضاع
+      if (r.status === 404) {                      
         jobs.delete(id);
         return res.status(404).json({ error: "expired", message: "This try-on expired. Please try again." });
       }
