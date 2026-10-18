@@ -19,7 +19,7 @@ import {
   toCatalogSize,
   fetchExplanation,
 } from "../utils/recommendationsApi";
-import { prepareUserPhoto, runVton, VtonError } from "../utils/vtonApi";
+import { prepareUserPhoto, preserveLowerBody, runVton, VtonError } from "../utils/vtonApi";
 
 
 // Asynchronous helper to create a high-quality rounded clipping base64 image or a category emoji placeholder
@@ -2083,7 +2083,15 @@ const triggerTryOn = async (topImage?: string, _garmentDescription?: string, top
     setProductOverlayUrl(null);
 
     const userPhoto = selectedPhoto;
-    const garmentImage = topImage || selectedOutfit.top?.image;
+    const recoTop = recoActive
+      ? recoSelectedItems.find((item) => item.garmentCategory === "Top" || item.garmentCategory === "Dress")
+      : undefined;
+    const recoBottom = recoActive
+      ? recoSelectedItems.find((item) => item.garmentCategory === "Bottom")
+      : undefined;
+    const selectedTop = recoTop || selectedOutfit.top;
+    const selectedBottom = recoActive ? recoBottom : selectedOutfit.bottom;
+    const garmentImage = topImage || selectedTop?.image;
 
     if (!userPhoto || !garmentImage) {
       setFashnErrorText("Please upload photo and select outfit first.");
@@ -2098,26 +2106,47 @@ const triggerTryOn = async (topImage?: string, _garmentDescription?: string, top
     setTryOnRenderKey((key) => key + 1);
 
     try {
-      const catalogIds = topProductId
-        ? [topProductId, selectedOutfit.bottom?.id].filter((x): x is string => !!x && !x.startsWith("groq-"))
-        : [selectedOutfit.top, selectedOutfit.bottom]
-            .filter((p): p is NonNullable<typeof p> => !!p && !!p.id && !String(p.id).startsWith("groq-"))
-            .map((p) => p.id);
-      const isCatalogTop = !!topProductId || !topImage || topImage === selectedOutfit.top?.image;
+      const selectedTopId = topProductId || selectedTop?.id;
+      const catalogTopId = selectedTopId && !selectedTopId.startsWith("groq-") ? selectedTopId : undefined;
+      const selectedBottomId = selectedBottom?.id;
+      const catalogBottomId = selectedBottomId && !selectedBottomId.startsWith("groq-") ? selectedBottomId : undefined;
+      const catalogIds = [catalogTopId, catalogBottomId].filter((id): id is string => !!id);
+      const isCatalogTop = !!topProductId || !topImage || topImage === selectedTop?.image;
 
       if (isCatalogTop && catalogIds.length > 0) {
         try {
           const photo = await prepareUserPhoto(userPhoto);
-          const ladi = await runVton(photo, catalogIds);
-          setTryOnUrl(ladi.tryOnUrl);
+          let finalTryOnUrl: string;
+          if (catalogTopId && catalogBottomId) {
+            const bottomResult = await runVton(photo, [catalogBottomId], (status) => {
+              setFashnStatus(status === "running" ? "draping" : "loading");
+            });
+            setFashnStatus("synthesizing");
+            const topPhoto = await prepareUserPhoto(bottomResult.tryOnUrl);
+            const topResult = await runVton(topPhoto, [catalogTopId], (status) => {
+              setFashnStatus(status === "running" ? "synthesizing" : "loading");
+            });
+            const waistLine = (jointPoints.waistLeft.y + jointPoints.waistRight.y) / 2;
+            const hipLine = (jointPoints.hipLeft.y + jointPoints.hipRight.y) / 2;
+            finalTryOnUrl = await preserveLowerBody(
+              bottomResult.tryOnUrl,
+              topResult.tryOnUrl,
+              Math.min(waistLine, hipLine) - 1,
+              Math.max(waistLine, hipLine) + 3,
+            );
+          } else {
+            const result = await runVton(photo, catalogIds);
+            finalTryOnUrl = result.tryOnUrl;
+          }
+          setTryOnUrl(finalTryOnUrl);
           setTryOnOverlaid(true);
           setFashnStatus("success");
           setTryOnRenderKey((key) => key + 1);
           return;
         } catch (e: any) {
-          // نرجع للتلبيس القديم (Kolors) بس لو الخدمة الجديدة مش متاحة أصلًا
+          // 
           const serviceDown = !(e instanceof VtonError) || e.code === "try_on_unavailable";
-          if (!serviceDown) throw e;
+          if (!serviceDown || (catalogTopId && catalogBottomId)) throw e;
           console.warn("[VTON] unavailable, falling back to Kolors:", e?.message);
         }
       }
