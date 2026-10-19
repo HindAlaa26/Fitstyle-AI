@@ -142,7 +142,7 @@ The platform includes a **shopper portal** (cart, sandbox checkout, PDF/QR order
 ## How it works
 
 <p align="center">
-  <img src="docs/diagrams/user-journey.png" alt="End-to-end flow of a shopper through FitStyle AI" width="820">
+  <img src="user-journey.png" alt="End-to-end flow of a shopper through FitStyle AI" width="820">
 </p>
 
 ### 1. Body measurement and size (MediaPipe Pose and segmentation)
@@ -162,7 +162,7 @@ The try-on service runs LaDI-VTON, a latent-diffusion model, on a free GPU noteb
 ## Architecture and technology
 
 <p align="center">
-  <img src="docs/diagrams/architecture.png" alt="System architecture: local components and cloud services" width="760">
+  <img src="architecture.png" alt="System architecture: local components and cloud services" width="760">
 </p>
 
 | Layer | Technology |
