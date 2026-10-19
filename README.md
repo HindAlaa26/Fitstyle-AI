@@ -31,7 +31,7 @@ One photograph. A size that fits. Outfits that match. A look you can preview bef
   <a href="#team">Team</a>
 </p>
 
-<img src="docs/screenshots/brtual_try_on_before_click_generate_look.PNG" alt="FitStyle AI: recommended outfit, virtual try-on preview and the shopper's selection" width="900">
+<img src="brtual%20try%20on%20before%20click%20generate%20look.PNG" alt="FitStyle AI: recommended outfit, virtual try-on preview and the shopper's selection" width="900">
 
 </div>
 
@@ -72,15 +72,15 @@ The platform includes a **shopper portal** (cart, sandbox checkout, PDF/QR order
 
 <table>
   <tr>
-    <td colspan="2"><img src="docs/screenshots/home_screen.PNG" alt="Landing page"><br><sub><b>Landing page</b></sub></td>
+    <td colspan="2"><img src="home_screen.PNG" alt="Landing page"><br><sub><b>Landing page</b></sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/sign_in_as_shopper.PNG" alt="Sign in as a shopper"><br><sub><b>Sign in</b> as a shopper (e-mail and password or Google)</sub></td>
-    <td width="50%"><img src="docs/screenshots/sigin_as_admin.PNG" alt="Sign in as a store owner"><br><sub><b>Sign in</b> as a store owner</sub></td>
+    <td width="50%"><img src="sign%20in%20as%20shopper.PNG" alt="Sign in as a shopper"><br><sub><b>Sign in</b> as a shopper (e-mail and password or Google)</sub></td>
+    <td width="50%"><img src="sigin%20as%20admin.PNG" alt="Sign in as a store owner"><br><sub><b>Sign in</b> as a store owner</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/sign_up_as_shopper.PNG" alt="Sign up as a shopper"><br><sub><b>Sign up</b> as a shopper</sub></td>
-    <td width="50%"><img src="docs/screenshots/sign_up_as_admin.PNG" alt="Store-owner sign-up is by invitation only"><br><sub><b>Sign up</b> as a store owner (by invitation only)</sub></td>
+    <td width="50%"><img src="sign%20up%20as%20shopper.PNG" alt="Sign up as a shopper"><br><sub><b>Sign up</b> as a shopper</sub></td>
+    <td width="50%"><img src="sign%20up%20as%20admin.PNG" alt="Store-owner sign-up is by invitation only"><br><sub><b>Sign up</b> as a store owner (by invitation only)</sub></td>
   </tr>
 </table>
 
@@ -88,25 +88,25 @@ The platform includes a **shopper portal** (cart, sandbox checkout, PDF/QR order
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/screenshots/upload_image_and_select_occasion.PNG" alt="Upload a photograph and choose an occasion"><br><sub><b>Step 1.</b> Upload a photograph and choose an occasion</sub></td>
-    <td width="50%"><img src="docs/screenshots/body_measurment_page.PNG" alt="Confirm your measurements"><br><sub><b>Step 2.</b> Review the measurements, body shape and size; edit them if needed</sub></td>
+    <td width="50%"><img src="upload%20image%20and%20select%20occasion.PNG" alt="Upload a photograph and choose an occasion"><br><sub><b>Step 1.</b> Upload a photograph and choose an occasion</sub></td>
+    <td width="50%"><img src="body%20measurment%20page.PNG" alt="Confirm your measurements"><br><sub><b>Step 2.</b> Review the measurements, body shape and size; edit them if needed</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/brtual_try_on_before_click_generate_look.PNG" alt="Virtual try-on step before generating the look"><br><sub><b>Step 3.</b> Recommended outfit, explanation card and selection, before <b>Generate Look</b></sub></td>
-    <td width="50%"><img src="docs/screenshots/select_another_top.PNG" alt="Dialog with all matching tops"><br><sub><b>Swap a piece.</b> All matching products of the category in the shopper's size</sub></td>
+    <td width="50%"><img src="brtual%20try%20on%20before%20click%20generate%20look.PNG" alt="Virtual try-on step before generating the look"><br><sub><b>Step 3.</b> Recommended outfit, explanation card and selection, before <b>Generate Look</b></sub></td>
+    <td width="50%"><img src="select%20another%20top.PNG" alt="Dialog with all matching tops"><br><sub><b>Swap a piece.</b> All matching products of the category in the shopper's size</sub></td>
   </tr>
 </table>
 
 <table>
   <tr>
-    <td width="33%" align="center"><img src="docs/screenshots/recommendation_outfit.PNG" alt="Recommended outfit"><br><sub>(a) the recommended outfit</sub></td>
-    <td width="33%" align="center"><img src="docs/screenshots/five_recommended_outft.PNG" alt="All five recommended outfits"><br><sub>(b) all five outfits</sub></td>
-    <td width="33%" align="center"><img src="docs/screenshots/user_selection_and_add_to_cart.PNG" alt="The shopper's selection"><br><sub>(c) the shopper's selection</sub></td>
+    <td width="33%" align="center"><img src="recommendation%20outfit.PNG" alt="Recommended outfit"><br><sub>(a) the recommended outfit</sub></td>
+    <td width="33%" align="center"><img src="five%20recommended%20outft.PNG" alt="All five recommended outfits"><br><sub>(b) all five outfits</sub></td>
+    <td width="33%" align="center"><img src="user%20selection%20and%20add%20to%20cart.PNG" alt="The shopper's selection"><br><sub>(c) the shopper's selection</sub></td>
   </tr>
 </table>
 
 <p align="center">
-  <img src="docs/screenshots/llm_explaination.PNG" alt="Why this outfit explanation card" width="420"><br>
+  <img src="llm%20explaination.PNG" alt="Why this outfit explanation card" width="420"><br>
   <sub><b>"Why this outfit"</b>: an LLM explanation built only from structured evidence about the outfit</sub>
 </p>
 
@@ -114,17 +114,17 @@ The platform includes a **shopper portal** (cart, sandbox checkout, PDF/QR order
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/screenshots/cart_page.PNG" alt="Shopping cart"><br><sub><b>Cart.</b> Buy online or pay offline</sub></td>
-    <td width="50%"><img src="docs/screenshots/choose_pay_online_or_offline.PNG" alt="Create order"><br><sub><b>Step 4.</b> Create the order and export a PDF summary</sub></td>
+    <td width="50%"><img src="cart%20page.PNG" alt="Shopping cart"><br><sub><b>Cart.</b> Buy online or pay offline</sub></td>
+    <td width="50%"><img src="choose%20pay%20online%20or%20offline.PNG" alt="Create order"><br><sub><b>Step 4.</b> Create the order and export a PDF summary</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/add_credi_info.PNG" alt="Sandbox payment gateway"><br><sub><b>Step 5.</b> Sandbox payment (no real currency is debited)</sub></td>
-    <td width="50%"><img src="docs/screenshots/order_done.PNG" alt="Order confirmation with delivery tracking"><br><sub><b>Step 6.</b> Order confirmation and delivery tracking</sub></td>
+    <td width="50%"><img src="add%20credi%20info.PNG" alt="Sandbox payment gateway"><br><sub><b>Step 5.</b> Sandbox payment (no real currency is debited)</sub></td>
+    <td width="50%"><img src="order%20done.PNG" alt="Order confirmation with delivery tracking"><br><sub><b>Step 6.</b> Order confirmation and delivery tracking</sub></td>
   </tr>
 </table>
 
 <p align="center">
-  <img src="docs/screenshots/pay_offline_pdf.PNG" alt="PDF order summary with QR code" width="320"><br>
+  <img src="pay%20offline%20pdf.PNG" alt="PDF order summary with QR code" width="320"><br>
   <sub><b>Pay in store.</b> PDF order summary with a QR code and the shop location</sub>
 </p>
 
@@ -132,8 +132,8 @@ The platform includes a **shopper portal** (cart, sandbox checkout, PDF/QR order
 
 <table>
   <tr>
-    <td width="70%"><img src="docs/screenshots/admin_dashboard.PNG" alt="Inventory dashboard"><br><sub><b>Inventory.</b> Catalogue summary, search, filters, stock switch, edit and delete, add garment, CSV export</sub></td>
-    <td width="30%"><img src="docs/screenshots/admin_analytics_board.PNG" alt="Sales and analytics dashboard"><br><sub><b>Sales and analytics</b></sub></td>
+    <td width="70%"><img src="admin%20dashboard.PNG" alt="Inventory dashboard"><br><sub><b>Inventory.</b> Catalogue summary, search, filters, stock switch, edit and delete, add garment, CSV export</sub></td>
+    <td width="30%"><img src="admin%20analytics%20board.PNG" alt="Sales and analytics dashboard"><br><sub><b>Sales and analytics</b></sub></td>
   </tr>
 </table>
 
