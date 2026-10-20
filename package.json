@@ -10,6 +10,7 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
   },
+  
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.1131.0",
     "@aws-sdk/lib-dynamodb": "^3.1131.0",

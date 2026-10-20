@@ -14,7 +14,6 @@ Output:  catalog_export.json  (ready for migrate_catalog_to_dynamodb.py)
 import json
 import random
 from io import BytesIO
-
 import pandas as pd
 from datasets import load_dataset
 
@@ -95,7 +94,6 @@ def main():
     print("Loading dataset from HuggingFace (last time this touches HuggingFace)...")
     df = load_catalog()
     print("Loaded rows:", len(df))
-
     # Clean (cell 10)
     df = df.drop_duplicates(subset="id", keep="first")
     df = df.dropna(subset=["id", "articleType"])
